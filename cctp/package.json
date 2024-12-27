@@ -1,0 +1,20 @@
+{
+  "name": "move",
+  "version": "1.0.0",
+  "description": "CCTP Quickstart",
+  "scripts": {
+    "start:ArbToBase": "node ArbToBase.js",
+    "start:BaseToArb": "node BaseToArb.js",
+    "start:OpToBase": "node OpToBase.js",
+    "start:BaseToOp": "node BaseToOp.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ethers": "^5.7.2",
+    "web3": "^1.8.1"
+  },
+  "devDependencies": {
+    "dotenv": "^16.0.3"
+  }
+}
