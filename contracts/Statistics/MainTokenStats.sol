@@ -1,30 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ABDKMath64x64} from "../lib/ABDKMath64x64.sol";
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {IFarm} from "../interfaces/IFarm.sol";
 import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
 
+/**
+ * @title Tizi MainTokenStats
+ * @author tizi.money
+ * @notice
+ *  MainTokenStats counts all assets, including USDC and other tokens.
+ *  Before each rebase, MainTokenStats first traverses all strategies and
+ *  vaults on the Base chain through strategiesStats to obtain the number
+ *  and price of tokens in the strategy. It then parses and stores the
+ *  information received from other chains, and calculates the total asset
+ *  price on the final chain as the basis for rebase.
+ */
 contract MainTokenStats {
-    using ABDKMath64x64 for uint256;
-    using ABDKMath64x64 for int128;
-
     IAuthorityControl private authorityControl;
     IStrategyManager private strategyManager;
     IERC20 public immutable USDC;
 
     address public mainAxelar;
     address public mainLayerZero;
-    bool public axelarExist;
-    bool public layerzeroExist;
     address public vault;
-    bool public vaultExist;
     address public usdcAddr;
     uint256 public immutable CHAINID;
-    uint256 public discountFactor = 10000000044287887;
-    uint256 public dicountDecimals = 10000000000000000;
 
     struct Strategy {
         uint256 chainID;
@@ -61,6 +63,9 @@ contract MainTokenStats {
 
     /*    -------------- Events --------------    */
     event DeleteData(uint256 chainID);
+    event SetAxelar(address axelar);
+    event SetLayerZero(address layerzero);
+    event SetVault(address vault);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
@@ -316,21 +321,9 @@ contract MainTokenStats {
                 );
                 int256 totalStrategyValue = 0;
                 for (uint256 k = 0; k < tokenInfos.length; k++) {
-                    uint256 timeLeft = tokenInfos[k].timestamp > block.timestamp
-                        ? tokenInfos[k].timestamp - block.timestamp
-                        : 0;
                     uint256 tokenAmount = tokenInfos[k].tokenAmount;
                     uint256 tokenValue = tokenInfos[k].tokenValue;
 
-                    if (timeLeft > 0) {
-                        int128 discountFactor64x64 = dicountDecimals.divu(
-                            discountFactor
-                        );
-                        int128 discountFactorTime64x64 = discountFactor64x64
-                            .pow(timeLeft);
-                        uint256 npv = discountFactorTime64x64.mulu(tokenAmount);
-                        tokenAmount = npv;
-                    }
                     if(tokenInfos[k].negativeGrowth) {
                         totalStrategyValue -= int256(tokenAmount * tokenValue);
                     } else {
@@ -347,33 +340,21 @@ contract MainTokenStats {
     }
 
     function setAxelar(address _axelar) public onlyAdmin {
-        require(!axelarExist, "axelar exists");
+        require(_axelar != address(0) && _axelar != mainAxelar, "Wrong address");
         mainAxelar = _axelar;
-        axelarExist = true;
-    }
-
-    function setAxelarExist(bool _isExist) public onlyAdmin {
-        axelarExist = _isExist;
+        emit SetAxelar(_axelar);
     }
 
     function setLayerZero(address _layerzero) public onlyAdmin {
-        require(!layerzeroExist, "layerzero exists");
+        require(_layerzero != address(0) && _layerzero != mainLayerZero, "Wrong address");
         mainLayerZero = _layerzero;
-        layerzeroExist = true;
-    }
-
-    function setLayerzeroExist(bool _isExist) public onlyAdmin {
-        layerzeroExist = _isExist;
+        emit SetLayerZero(_layerzero);
     }
 
     function setVault(address _vault) public onlyAdmin {
-        require(vaultExist == false, "vault exists");
+        require(_vault != address(0) && _vault != vault, "Wrong address");
         vault = _vault;
-        vaultExist = true;
-    }
-
-    function setVaultExist(bool _isExist) public onlyAdmin {
-        vaultExist = _isExist;
+        emit SetVault(_vault);
     }
 
     function clearDataByChainId(uint256 _chainID) public onlyAxelarorLayerZero {
@@ -405,13 +386,5 @@ contract MainTokenStats {
                 break;
             }
         }
-    }
-
-    function setDiscountFactor(
-        uint256 _discountFactor,
-        uint256 _dicountDecimals
-    ) public onlyAdmin {
-        discountFactor = _discountFactor;
-        dicountDecimals = _dicountDecimals;
     }
 }

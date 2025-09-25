@@ -7,6 +7,14 @@ import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/Opti
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {ITokenStats} from "../interfaces/ITokenStats.sol";
 
+/**
+ * @title Tizi SubTokenLayerZero
+ * @author tizi.money
+ * @notice
+ *  SubTokenLayerZero is deployed on other chains and is responsible 
+ *  for counting and encapsulating the asset information on the chain 
+ *  and sending it to the Base chain through LayerZero.
+ */
 contract SubTokenLayerZero is OApp {
     using OptionsBuilder for bytes;
 

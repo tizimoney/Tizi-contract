@@ -6,6 +6,14 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {ITokenStats} from "../interfaces/ITokenStats.sol";
 
+/**
+ * @title Tizi MainTokenAxelar
+ * @author tizi.money
+ * @notice
+ *  MainTokenAxelar is deployed on the Base chain. When messages are 
+ *  sent across chains through Axelar, MainTokenAxelar will receive 
+ *  information from other chains, parse it and store it.
+ */
 contract MainTokenAxelar is AxelarExecutable {
     using ECDSA for bytes32;
 

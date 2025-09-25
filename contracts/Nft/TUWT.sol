@@ -8,11 +8,20 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {IHelper} from "../interfaces/IHelper.sol";
 
+/**
+ * @title Tizi TUWT
+ * @author tizi.money
+ * @notice
+ *  TUWT is Tizi.money's NFT, which is mainly used as a withdrawal
+ *  voucher. When a user withdraws money and there is not enough funds
+ *  in the MainVault, an NFT will be minted for the user, recording
+ *  the amount to be withdrawn. When there are sufficient funds, the NFT
+ *  will be made available in order.
+ */
 contract TUWT is ERC721Enumerable {
     using Strings for uint256;
     uint256 private _nextTokenId;
     address public helper;
-    bool public helperStatus = true;
     IAuthorityControl private immutable authorityControl;
 
     /*    ------------ Constructor ------------    */
@@ -21,7 +30,7 @@ contract TUWT is ERC721Enumerable {
     }
 
     /*    -------------- Events --------------    */
-    event SetHelper(address newHelper, bool newStatus);
+    event SetHelper(address newHelper);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
@@ -107,13 +116,8 @@ contract TUWT is ERC721Enumerable {
     }
 
     function setHelper(address _helper) external onlyAdmin {
-        require(helperStatus == true, "helper exists");
+        require(_helper != helper && _helper != address(0), "Wrong address");
         helper = _helper;
-        helperStatus = false;
-        emit SetHelper(_helper, false);
-    }
-
-    function setHelperStatus(bool _helperStatus) external onlyAdmin {
-        helperStatus = _helperStatus;
+        emit SetHelper(_helper);
     }
 }

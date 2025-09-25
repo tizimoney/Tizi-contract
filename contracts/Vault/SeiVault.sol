@@ -8,46 +8,29 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
 import {ISharedStructs} from "../interfaces/ISharedStructs.sol";
 
-interface ITransmitter {
-    function receiveMessage(
-        bytes calldata message,
-        bytes calldata attestation
-    ) external returns (bool);
-}
-
-interface ITokenMessenger {
-    function depositForBurn(
-        uint256 amount,
-        uint32 destinationDomain,
-        bytes32 mintRecipient,
-        address burnToken
-    ) external returns (uint64);
+interface IIbc {
+    function transferWithDefaultTimeout(string memory toAddress, string memory port, string memory channel, string memory denom, uint256 amount, string memory memo)
+        external payable returns (bool success);
 }
 
 /**
- * @title Tizi SubVault
+ * @title Tizi SeiVault
  * @author tizi.money
  * @notice
- *  SubVault is deployed on chains other than the Base chain and is the first
- *  place where USDC is stored on other chains. SubVault receives USDC
- *  transferred from the Base chain via CCTP, and then the Manager decides
- *  which strategies to store USDC in. You cannot withdraw money in SubVault,
- *  and USDC will eventually be transferred to the Base chain via CCTP.
- * 
- *  Only one MainVault supports transfers, and the management and changes
- *  of MainVault are determined by the Admin.
- * 
- *  SubVault determines the deposits, withdrawals, and harvests of the
- *  current chain's strategy, is managed by the Manager, and can view the
- *  asset information in the strategy.
+ *  SeiVault is the Vault contract on the Sei chain used in the past.
+ *  Since CCTP does not yet support the Sei chain, CCTP is used to
+ *  cross-chain USDC from the Base chain to the Noble chain, and then
+ *  IBC is used to cross-chain to the Sei chain.
  */
-contract SubVault is ISharedStructs {
-    address public usdcAddr;
-    address public mainVault;
-    address public tokenMessenger;
+contract SeiVault is ISharedStructs {
+    string private nobleAddress;
+    address private ibcRouter;
+    string public port;
+    string public channel;
+    string public denom;
+    string public memo;
 
     IAuthorityControl private authorityControl;
-    ITransmitter private transmitter;
     IERC20 private usdc;
     IStrategyManager private strategyManager;
 
@@ -55,14 +38,21 @@ contract SubVault is ISharedStructs {
     constructor(
         address _accessAddr,
         address _usdcAddr,
-        address _transmitter,
-        address _tokenMessenger
+        string memory _nobleAddress,
+        address _ibcRouter,
+        string memory _port,
+        string memory _channel,
+        string memory _denom,
+        string memory _memo
     ) {
         authorityControl = IAuthorityControl(_accessAddr);
         usdc = IERC20(_usdcAddr);
-        usdcAddr = _usdcAddr;
-        transmitter = ITransmitter(_transmitter);
-        tokenMessenger = _tokenMessenger;
+        nobleAddress = _nobleAddress;
+        ibcRouter = _ibcRouter;
+        port = _port;
+        channel = _channel;
+        denom = _denom;
+        memo = _memo;
     }
 
     /*    -------------- Events --------------    */
@@ -71,8 +61,7 @@ contract SubVault is ISharedStructs {
         address indexed to,
         uint256 indexed amount
     );
-    event BridgeToInfo(uint256 dstDomain, address indexed to, uint256 amount);
-    event BridgeInInfo(bytes32 messageHash);
+    event IBCBridge(string to, uint256 amount);
     event SetControl(address newControl);
 
     /*    ------------- Modifiers ------------    */
@@ -99,7 +88,6 @@ contract SubVault is ISharedStructs {
     }
 
     /*    ---------- Read Functions -----------    */
-
     /// @notice Check information about tokens in a strategy, only the current chain is allowed.
     /// @param _chainId The chain id where the strategy is located.
     /// @param _farm The address of strategy.
@@ -131,54 +119,43 @@ contract SubVault is ISharedStructs {
     }
 
     /*    ---------- Write Functions ----------    */
-
-    /// @notice Call the receiveMessage function of the CCTP transmitter to receive cross-chain USDC.
-    /// @param _message The information sent by mainVault.
-    /// @param _attestation Attestation from CCTP.
-    function bridgeIn(
-        bytes calldata _message,
-        bytes calldata _attestation
-    ) public onlyManager {
-        require(
-            transmitter.receiveMessage(_message, _attestation) == true,
-            "collection failure"
-        );
-        emit BridgeInInfo(keccak256(_message));
-    }
-
-    /// @notice Call CCTP tokenMessenger function to only allow sending to registered vault addresses.
-    /// @param _amount The amount of USDC.
-    /// @param _destDomain The domain of destination chain.
-    /// @param _receiver The address of mainVault.
+    /// @notice Use IBC transfer USDC to noble chain.
     function bridgeOut(
-        uint256 _amount,
-        uint32 _destDomain,
-        address _receiver
-    ) public onlyManager {
+        uint256 _amount
+    ) public onlyManager returns (bool) {
         require(_amount > 0, "Amount must be greater than zero");
-        require(_receiver == mainVault, "Receiver is not vault");
-        bytes32 receiverBytes32 = addressToBytes32(_receiver);
         require(
-            IERC20(usdcAddr).approve(tokenMessenger, _amount) == true,
+            usdc.approve(ibcRouter, _amount) == true,
             "approve fail"
         );
-        ITokenMessenger(tokenMessenger).depositForBurn(
-            _amount,
-            _destDomain,
-            receiverBytes32,
-            usdcAddr
-        );
-        emit BridgeToInfo(_destDomain, _receiver, _amount);
+        bool sueecss = IIbc(ibcRouter).transferWithDefaultTimeout(nobleAddress, port, channel, denom, _amount, memo);
+        emit IBCBridge(nobleAddress, _amount);
+        return sueecss;
     }
 
-    function setMainVault(address _vault) external onlyAdmin {
-        require(_vault != address(0) && _vault != mainVault, "Wrong vault address");
-        mainVault = _vault;
+    function setIBCRouter(address _ibcRouter) external onlyAdmin {
+        require(_ibcRouter != address(0) && _ibcRouter != ibcRouter, "Wrong messenger address");
+        ibcRouter = _ibcRouter;
     }
 
-    function setTokenMessenger(address _tokenMessenger) external onlyAdmin {
-        require(_tokenMessenger != address(0) && _tokenMessenger != tokenMessenger, "Wrong messenger address");
-        tokenMessenger = _tokenMessenger;
+    function setNobleAddress(string memory _nobleAddress) external onlyAdmin {
+        nobleAddress = _nobleAddress;
+    }
+
+    function setChannel(string memory _channel) external onlyAdmin {
+        channel = _channel;
+    }
+
+    function setPort(string memory _port) external onlyAdmin {
+        port = _port;
+    }
+
+    function setDenom(string memory _denom) external onlyAdmin {
+        denom = _denom;
+    }
+
+    function setMemo(string memory _memo) external onlyAdmin {
+        memo = _memo;
     }
 
     /// @notice Transfer USDC from strategy to vault.

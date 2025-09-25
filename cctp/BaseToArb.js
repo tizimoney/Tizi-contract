@@ -32,9 +32,9 @@ const main = async () => {
     const amount = "1000000"
     const destDomain = 3
     // mainVault的地址
-    const sender = ""
+    const sender = "0x7A846F4579fA0A31c68F0f641E370fB28D90a8db"
     // subVault的地址
-    const receiver = ""
+    const receiver = "0x57654eD047EF459e93266624D46165f3517cF0c9"
 
     // initialize contracts using address and ABI
 
@@ -78,7 +78,9 @@ const main = async () => {
         const response = await fetch(
             `https://iris-api.circle.com/attestations/${messageHash}`,
         )
-        attestationResponse = await response.json()
+        if ( response ) {
+            attestationResponse = await response.json()
+        }
         await new Promise((r) => setTimeout(r, 2000))
     }
 

@@ -11,7 +11,17 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "ethers": "^5.7.2",
+    "@cosmjs/crypto": "^0.32.4",
+    "@cosmjs/proto-signing": "^0.32.4",
+    "@cosmjs/stargate": "^0.32.4",
+    "@types/node": "^22.10.5",
+    "axios": "^1.7.9",
+    "bech32": "^2.0.0",
+    "ethers": "^6.11.1",
+    "protobufjs": "^7.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3",
+    "viem": "^2.23.4",
     "web3": "^1.8.1"
   },
   "devDependencies": {

@@ -6,6 +6,14 @@ import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contrac
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {ITokenStats} from "../interfaces/ITokenStats.sol";
 
+/**
+ * @title Tizi SubTokenAxelar
+ * @author tizi.money
+ * @notice
+ *  SubTokenAxelar is deployed on other chains and is responsible 
+ *  for counting and encapsulating the asset information on the chain 
+ *  and sending it to the Base chain through Axelar.
+ */
 contract SubTokenAxelar is AxelarExecutable {
     IAxelarGasService public immutable gasService;
     ITokenStats public immutable tokenStats;

@@ -34,12 +34,6 @@ module.exports = {
             gasLimit: 100000,
             gasPrice: 41697633457,
         },
-        hardhat: {
-            forking: {
-                url: `https://base-mainnet.g.alchemy.com/v2/0CjfwK3kbS58qd0nAnduPjCRwyRrE5_g`,
-                blockNumber: 13837348,
-            },
-        },
         polygon_mainnet: {
             url: `https://polygon-mainnet.infura.io/v3/${projectId}`,
             accounts: {
@@ -54,12 +48,6 @@ module.exports = {
         },
         arb_mainnet: {
             url: `https://arbitrum-mainnet.infura.io/v3/${projectId}`,
-            accounts: {
-                mnemonic: mnemonic1,
-            },
-        },
-        arb_testnet: {
-            url: `https://arbitrum-sepolia.infura.io/v3/0d46f92f5a03490c903c45e359dd72ae`,
             accounts: {
                 mnemonic: mnemonic1,
             },
@@ -105,26 +93,6 @@ module.exports = {
                         runs: 200,
                     },
                     viaIR: true,
-                },
-            },
-            {
-                version: "0.8.20",
-                settings: {
-                    optimizer: {
-                        enabled: true,
-                        runs: 200,
-                    },
-                    
-                },
-            },
-            {
-                version: "0.8.22",
-                settings: {
-                    optimizer: {
-                        enabled: true,
-                        runs: 200,
-                    },
-                    
                 },
             },
             {

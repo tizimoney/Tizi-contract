@@ -19,7 +19,6 @@ const waitForTransaction = async (web3, txHash) => {
 
 const main = async () => {
     const web3 = new Web3(BASE_MAINNET_RPC)
-    console.log(process.env)
     // Add ETH private key used for signing transactions
     const ethSigner = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY)
     web3.eth.accounts.wallet.add(ethSigner)
@@ -29,13 +28,13 @@ const main = async () => {
     web3.eth.accounts.wallet.add(opSigner)
 
     // some Address
-    const amount = "4000000"
+    const amount = "900000"
     const destDomain = 2
     //const messager = "0x1682Ae6375C4E4A97e4B583BC394c861A46D8962"
     // mainVault的地址
-    const mainbridge = ""
+    const mainbridge = "0x7A846F4579fA0A31c68F0f641E370fB28D90a8db"
     // subVault的地址
-    const receiver = ""
+    const receiver = "0x7BA37460Da796ec53C7Fc7c5c5ea0ceeD10d53fD"
 
     // initialize contracts using address and ABI
 
@@ -79,7 +78,9 @@ const main = async () => {
         const response = await fetch(
             `https://iris-api.circle.com/attestations/${messageHash}`,
         )
-        attestationResponse = await response.json()
+        if ( response ) {
+            attestationResponse = await response.json()
+        }
         await new Promise((r) => setTimeout(r, 2000))
     }
 

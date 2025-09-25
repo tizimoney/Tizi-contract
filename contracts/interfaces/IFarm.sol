@@ -41,7 +41,7 @@ interface IFarm is ISharedStructs {
 
     function check() external view returns (EarlierProfits[] memory);
 
-    function deposit(uint256 _amountm, bool checkPoint) external;
+    function deposit(uint256 _amount) external;
 
     function withdraw(uint256 _amount) external returns (uint256);
 

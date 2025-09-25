@@ -6,63 +6,66 @@ import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {IFarm} from "../interfaces/IFarm.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
-import {ISharedStructs} from "../interfaces/ISharedStructs.sol";
 
-interface ITransmitter {
-    function receiveMessage(
-        bytes calldata message,
-        bytes calldata attestation
-    ) external returns (bool);
-}
+interface IWrappedTokenBridge {
+    struct CallParams {
+        address payable refundAddress;
+        address zroPaymentAddress;
+    }
 
-interface ITokenMessenger {
-    function depositForBurn(
-        uint256 amount,
-        uint32 destinationDomain,
-        bytes32 mintRecipient,
-        address burnToken
-    ) external returns (uint64);
+    function estimateBridgeFee(
+        uint16 remoteChainId, 
+        bool useZro, 
+        bytes calldata adapterParams
+    ) external view returns (uint nativeFee, uint zroFee);
+
+    function bridge(
+        address localToken, 
+        uint16 remoteChainId, 
+        uint amount, 
+        address to, 
+        bool unwrapWeth, 
+        CallParams calldata callParams, 
+        bytes memory adapterParams
+    ) external payable;
 }
 
 /**
- * @title Tizi SubVault
+ * @title Tizi EtherLinkVault
  * @author tizi.money
  * @notice
- *  SubVault is deployed on chains other than the Base chain and is the first
- *  place where USDC is stored on other chains. SubVault receives USDC
- *  transferred from the Base chain via CCTP, and then the Manager decides
- *  which strategies to store USDC in. You cannot withdraw money in SubVault,
- *  and USDC will eventually be transferred to the Base chain via CCTP.
+ *  EtherLinkVault is a vault contract deployed on the EtherLink chain. 
+ *  Since CCTP does not support the EtherLink chain, LayerZeroV1 is used
+ *  for USDC cross-chain, and then the Manager decides
+ *  which strategies to store USDC in. You cannot withdraw money in EtherLinkVault,
+ *  and USDC will eventually be transferred to the Base chain via LayerZeroV1.
  * 
  *  Only one MainVault supports transfers, and the management and changes
  *  of MainVault are determined by the Admin.
  * 
- *  SubVault determines the deposits, withdrawals, and harvests of the
+ *  EtherLinkVault determines the deposits, withdrawals, and harvests of the
  *  current chain's strategy, is managed by the Manager, and can view the
  *  asset information in the strategy.
  */
-contract SubVault is ISharedStructs {
-    address public usdcAddr;
+contract EtherLinkVault {
+    address public usdc;
     address public mainVault;
-    address public tokenMessenger;
+    address public wrappedTokenBridge;
+    bytes public options;
 
     IAuthorityControl private authorityControl;
-    ITransmitter private transmitter;
-    IERC20 private usdc;
     IStrategyManager private strategyManager;
 
     /*    ------------ Constructor ------------    */
     constructor(
         address _accessAddr,
-        address _usdcAddr,
-        address _transmitter,
-        address _tokenMessenger
+        address _usdc,
+        address _wrappedTokenBridge
     ) {
         authorityControl = IAuthorityControl(_accessAddr);
-        usdc = IERC20(_usdcAddr);
-        usdcAddr = _usdcAddr;
-        transmitter = ITransmitter(_transmitter);
-        tokenMessenger = _tokenMessenger;
+        usdc = _usdc;
+        wrappedTokenBridge = _wrappedTokenBridge;
+        setOptions(1, 125000);
     }
 
     /*    -------------- Events --------------    */
@@ -72,7 +75,6 @@ contract SubVault is ISharedStructs {
         uint256 indexed amount
     );
     event BridgeToInfo(uint256 dstDomain, address indexed to, uint256 amount);
-    event BridgeInInfo(bytes32 messageHash);
     event SetControl(address newControl);
 
     /*    ------------- Modifiers ------------    */
@@ -99,7 +101,6 @@ contract SubVault is ISharedStructs {
     }
 
     /*    ---------- Read Functions -----------    */
-
     /// @notice Check information about tokens in a strategy, only the current chain is allowed.
     /// @param _chainId The chain id where the strategy is located.
     /// @param _farm The address of strategy.
@@ -123,52 +124,45 @@ contract SubVault is ISharedStructs {
     }
 
     function addressToBytes32(address addr) private pure returns (bytes32) {
-        bytes32 result;
-        assembly {
-            result := addr
-        }
-        return result;
+        return bytes32(uint256(uint160(addr)));
+    }
+
+    /// @notice Calculate transfer native fee of LayerZeroV1.
+    /// @return Native token fee.
+    function getTransferFee() public view returns (uint256) {
+        (uint256 nativeFee, ) = IWrappedTokenBridge(wrappedTokenBridge).estimateBridgeFee(184, false, options);
+        return nativeFee;
     }
 
     /*    ---------- Write Functions ----------    */
+    /// @notice Call WrappedTokenBridge contract to transfer USDC to Base.
+    /// @param _amount The amount of USDC.
+    function bridgeOut(
+        uint256 _amount
+    ) public payable onlyManager {
+        if(_amount == 0 || _amount > IERC20(usdc).balanceOf(address(this))) {
+            _amount = IERC20(usdc).balanceOf(address(this));
+        }
+        IERC20(usdc).approve(wrappedTokenBridge, _amount);
 
-    /// @notice Call the receiveMessage function of the CCTP transmitter to receive cross-chain USDC.
-    /// @param _message The information sent by mainVault.
-    /// @param _attestation Attestation from CCTP.
-    function bridgeIn(
-        bytes calldata _message,
-        bytes calldata _attestation
-    ) public onlyManager {
-        require(
-            transmitter.receiveMessage(_message, _attestation) == true,
-            "collection failure"
+        IWrappedTokenBridge.CallParams memory callParams = IWrappedTokenBridge.CallParams({
+            refundAddress: payable(address(this)),
+            zroPaymentAddress: address(0)
+        });
+        IWrappedTokenBridge(wrappedTokenBridge).bridge{value: msg.value}(
+            usdc, 
+            184, 
+            _amount, 
+            mainVault, 
+            false, 
+            callParams, 
+            options
         );
-        emit BridgeInInfo(keccak256(_message));
+        emit BridgeToInfo(184, mainVault, _amount);
     }
 
-    /// @notice Call CCTP tokenMessenger function to only allow sending to registered vault addresses.
-    /// @param _amount The amount of USDC.
-    /// @param _destDomain The domain of destination chain.
-    /// @param _receiver The address of mainVault.
-    function bridgeOut(
-        uint256 _amount,
-        uint32 _destDomain,
-        address _receiver
-    ) public onlyManager {
-        require(_amount > 0, "Amount must be greater than zero");
-        require(_receiver == mainVault, "Receiver is not vault");
-        bytes32 receiverBytes32 = addressToBytes32(_receiver);
-        require(
-            IERC20(usdcAddr).approve(tokenMessenger, _amount) == true,
-            "approve fail"
-        );
-        ITokenMessenger(tokenMessenger).depositForBurn(
-            _amount,
-            _destDomain,
-            receiverBytes32,
-            usdcAddr
-        );
-        emit BridgeToInfo(_destDomain, _receiver, _amount);
+    function setOptions(uint16 _version, uint256 _value) public onlyAdmin {
+        options = abi.encodePacked(_version, _value);
     }
 
     function setMainVault(address _vault) external onlyAdmin {
@@ -176,9 +170,9 @@ contract SubVault is ISharedStructs {
         mainVault = _vault;
     }
 
-    function setTokenMessenger(address _tokenMessenger) external onlyAdmin {
-        require(_tokenMessenger != address(0) && _tokenMessenger != tokenMessenger, "Wrong messenger address");
-        tokenMessenger = _tokenMessenger;
+    function setWrappedTokenBridge(address _wrappedTokenBridge) external onlyAdmin {
+        require(_wrappedTokenBridge != address(0) && _wrappedTokenBridge != wrappedTokenBridge, "Wrong address");
+        wrappedTokenBridge = _wrappedTokenBridge;
     }
 
     /// @notice Transfer USDC from strategy to vault.
@@ -191,7 +185,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         if (_amount == 0) {
-            _amount = usdc.balanceOf(_farm);
+            _amount = IERC20(usdc).balanceOf(_farm);
             require(_amount > 0, "Amount must be greater than zero");
         }
         IFarm(_farm).toVault(_amount);
@@ -208,7 +202,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         require(_amount > 0, "Amount must be greater than zero");
-        require(usdc.transfer(_farm, _amount) == true, "transfer failure");
+        require(IERC20(usdc).transfer(_farm, _amount) == true, "transfer failure");
         emit TrasferDetails(address(this), _farm, _amount);
         return true;
     }
@@ -223,7 +217,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         require(
-            usdc.balanceOf(_farm) >= _amount,
+            IERC20(usdc).balanceOf(_farm) >= _amount,
             "farm balance insufficient"
         );
         IFarm(_farm).deposit(_amount);
@@ -257,4 +251,7 @@ contract SubVault is ISharedStructs {
         strategyManager = IStrategyManager(_control);
         emit SetControl(_control);
     }
+
+    fallback() external payable{}
+    receive() external payable {}
 }

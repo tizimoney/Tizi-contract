@@ -6,6 +6,17 @@ import {IERC20} from "../interfaces/IERC20.sol";
 import {IFarm} from "../interfaces/IFarm.sol";
 import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
 
+/**
+ * @title Tizi SubTokenStats
+ * @author tizi.money
+ * @notice
+ *  SubTokenStats is deployed on chains other than Base to collect
+ *  statistics on all assets on this chain, including USDC and other tokens.
+ *  SubTokenStats traverses all strategies and vaults on the Base chain
+ *  through strategiesStats to obtain the number and price of tokens in
+ *  the strategy. It is packaged in the SubTokenAxelar or SubTokenLayerZero
+ *  contract and sent to MainTokenStats.
+ */
 contract SubTokenStats {
     IAuthorityControl private authorityControl;
     IStrategyManager private strategyManager;
@@ -13,10 +24,7 @@ contract SubTokenStats {
     uint256 public immutable CHAINID;
     address public subAxelar;
     address public subLayerZero;
-    bool public axelarExist;
-    bool public layerzeroExist;
     address public vault;
-    bool public vaultExist;
     address public usdcAddr;
 
     struct Strategy {
@@ -47,6 +55,11 @@ contract SubTokenStats {
         usdcAddr = _USDC;
         CHAINID = _chainID;
     }
+
+    /*    -------------- Events --------------    */
+    event SetAxelar(address axelar);
+    event SetLayerZero(address layerzero);
+    event SetVault(address vault);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyAxelarorLZ() {
@@ -241,33 +254,21 @@ contract SubTokenStats {
     }
 
     function setAxelar(address _axelar) public onlyAdmin {
-        require(!axelarExist, "axelar exists");
+        require(_axelar != address(0) && _axelar != subAxelar, "Wrong address");
         subAxelar = _axelar;
-        axelarExist = true;
-    }
-
-    function setAxelarExist(bool _isExist) public onlyAdmin {
-        axelarExist = _isExist;
+        emit SetAxelar(_axelar);
     }
 
     function setLayerZero(address _layerzero) public onlyAdmin {
-        require(!layerzeroExist, "layerzero exists");
+        require(_layerzero != address(0) && _layerzero != subLayerZero, "Wrong address");
         subLayerZero = _layerzero;
-        layerzeroExist = true;
-    }
-
-    function setLayerzeroExist(bool _isExist) public onlyAdmin {
-        layerzeroExist = _isExist;
+        emit SetLayerZero(_layerzero);
     }
 
     function setVault(address _vault) public onlyAdmin {
-        require(vaultExist == false, "vault exists");
+        require(_vault != address(0) && _vault != vault, "Wrong address");
         vault = _vault;
-        vaultExist = true;
-    }
-
-    function setVaultExist(bool _isExist) public onlyAdmin {
-        vaultExist = _isExist;
+        emit SetVault(_vault);
     }
 
     /// @notice Clear statistics, called before each statistics. 

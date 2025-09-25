@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
 
-contract StrategyManager is Ownable {
+/**
+ * @title Tizi StrategyManager
+ * @author tizi.money
+ * @notice
+ *  StrategyManager is deployed on all chains to manage strategies. After
+ *  a strategy is added, its status needs to be set to active before deposits
+ *  are allowed. There can be multiple active strategies on a chain, and
+ *  the addition, activation and deletion of strategies are controlled
+ *  by the Admin.
+ */
+contract StrategyManager {
     struct Strategy {
         bool exists;
         bool active;
@@ -24,7 +33,7 @@ contract StrategyManager is Ownable {
     IAuthorityControl private authorityControl;
 
     /*    ------------ Constructor ------------    */
-    constructor(address _accessAddr) Ownable(msg.sender) {
+    constructor(address _accessAddr) {
         authorityControl = IAuthorityControl(_accessAddr);
     }
 

@@ -6,7 +6,6 @@ import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {IFarm} from "../interfaces/IFarm.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
-import {ISharedStructs} from "../interfaces/ISharedStructs.sol";
 
 interface ITransmitter {
     function receiveMessage(
@@ -15,40 +14,53 @@ interface ITransmitter {
     ) external returns (bool);
 }
 
-interface ITokenMessenger {
+interface ITokenMessengerV2 {
     function depositForBurn(
         uint256 amount,
         uint32 destinationDomain,
         bytes32 mintRecipient,
-        address burnToken
-    ) external returns (uint64);
-}
+        address burnToken,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 minFinalityThreshold
+    ) external;
+
+    function depositForBurnWithHook(
+        uint256 amount,
+        uint32 destinationDomain,
+        bytes32 mintRecipient,
+        address burnToken,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        bytes calldata hookData
+    ) external;
+} 
 
 /**
- * @title Tizi SubVault
+ * @title Tizi SubVaultV2
  * @author tizi.money
  * @notice
- *  SubVault is deployed on chains other than the Base chain and is the first
- *  place where USDC is stored on other chains. SubVault receives USDC
- *  transferred from the Base chain via CCTP, and then the Manager decides
+ *  SubVaultV2 is same as SubVault, SubVaultV2 use CCTPV2, Some chains only
+ *  support CCTPV2, and is the first place where USDC is stored on other chains. SubVault receives USDC
+ *  transferred from the Base chain via CCTPV2, and then the Manager decides
  *  which strategies to store USDC in. You cannot withdraw money in SubVault,
- *  and USDC will eventually be transferred to the Base chain via CCTP.
+ *  and USDC will eventually be transferred to the Base chain via CCTPV2.
  * 
  *  Only one MainVault supports transfers, and the management and changes
  *  of MainVault are determined by the Admin.
  * 
- *  SubVault determines the deposits, withdrawals, and harvests of the
+ *  SubVaultV2 determines the deposits, withdrawals, and harvests of the
  *  current chain's strategy, is managed by the Manager, and can view the
  *  asset information in the strategy.
  */
-contract SubVault is ISharedStructs {
+contract SubVaultV2 {
     address public usdcAddr;
     address public mainVault;
-    address public tokenMessenger;
 
+    ITokenMessengerV2 public tokenMessenger;
     IAuthorityControl private authorityControl;
     ITransmitter private transmitter;
-    IERC20 private usdc;
     IStrategyManager private strategyManager;
 
     /*    ------------ Constructor ------------    */
@@ -59,10 +71,9 @@ contract SubVault is ISharedStructs {
         address _tokenMessenger
     ) {
         authorityControl = IAuthorityControl(_accessAddr);
-        usdc = IERC20(_usdcAddr);
         usdcAddr = _usdcAddr;
         transmitter = ITransmitter(_transmitter);
-        tokenMessenger = _tokenMessenger;
+        tokenMessenger = ITokenMessengerV2(_tokenMessenger);
     }
 
     /*    -------------- Events --------------    */
@@ -123,18 +134,14 @@ contract SubVault is ISharedStructs {
     }
 
     function addressToBytes32(address addr) private pure returns (bytes32) {
-        bytes32 result;
-        assembly {
-            result := addr
-        }
-        return result;
+        return bytes32(uint256(uint160(addr)));
     }
 
     /*    ---------- Write Functions ----------    */
 
-    /// @notice Call the receiveMessage function of the CCTP transmitter to receive cross-chain USDC.
+    /// @notice Call the receiveMessage function of the CCTPV2 transmitter to receive cross-chain USDC.
     /// @param _message The information sent by mainVault.
-    /// @param _attestation Attestation from CCTP.
+    /// @param _attestation Attestation from CCTPV2.
     function bridgeIn(
         bytes calldata _message,
         bytes calldata _attestation
@@ -146,27 +153,30 @@ contract SubVault is ISharedStructs {
         emit BridgeInInfo(keccak256(_message));
     }
 
-    /// @notice Call CCTP tokenMessenger function to only allow sending to registered vault addresses.
+    /// @notice Call CCTPV2 tokenMessenger function to only allow sending to registered vault addresses.
     /// @param _amount The amount of USDC.
     /// @param _destDomain The domain of destination chain.
     /// @param _receiver The address of mainVault.
+    /// @param _maxFee Choose fast cross-chain or normal cross-chain.
+    /// @param _minFinalityThreshold Choose fast cross-chain or normal cross-chain.
     function bridgeOut(
         uint256 _amount,
         uint32 _destDomain,
-        address _receiver
+        address _receiver,
+        uint256 _maxFee,
+        uint32 _minFinalityThreshold
     ) public onlyManager {
         require(_amount > 0, "Amount must be greater than zero");
         require(_receiver == mainVault, "Receiver is not vault");
-        bytes32 receiverBytes32 = addressToBytes32(_receiver);
-        require(
-            IERC20(usdcAddr).approve(tokenMessenger, _amount) == true,
-            "approve fail"
-        );
-        ITokenMessenger(tokenMessenger).depositForBurn(
-            _amount,
-            _destDomain,
-            receiverBytes32,
-            usdcAddr
+        IERC20(usdcAddr).approve(address(tokenMessenger), _amount);
+        tokenMessenger.depositForBurn(
+           _amount,
+           _destDomain,
+           addressToBytes32(_receiver),
+           usdcAddr,
+           bytes32(0),
+           _maxFee,
+           _minFinalityThreshold
         );
         emit BridgeToInfo(_destDomain, _receiver, _amount);
     }
@@ -177,8 +187,8 @@ contract SubVault is ISharedStructs {
     }
 
     function setTokenMessenger(address _tokenMessenger) external onlyAdmin {
-        require(_tokenMessenger != address(0) && _tokenMessenger != tokenMessenger, "Wrong messenger address");
-        tokenMessenger = _tokenMessenger;
+        require(_tokenMessenger != address(0) && _tokenMessenger != address(tokenMessenger), "Wrong messenger address");
+        tokenMessenger = ITokenMessengerV2(_tokenMessenger);
     }
 
     /// @notice Transfer USDC from strategy to vault.
@@ -191,7 +201,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         if (_amount == 0) {
-            _amount = usdc.balanceOf(_farm);
+            _amount = IERC20(usdcAddr).balanceOf(_farm);
             require(_amount > 0, "Amount must be greater than zero");
         }
         IFarm(_farm).toVault(_amount);
@@ -208,7 +218,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         require(_amount > 0, "Amount must be greater than zero");
-        require(usdc.transfer(_farm, _amount) == true, "transfer failure");
+        require(IERC20(usdcAddr).transfer(_farm, _amount) == true, "transfer failure");
         emit TrasferDetails(address(this), _farm, _amount);
         return true;
     }
@@ -223,7 +233,7 @@ contract SubVault is ISharedStructs {
             "Farm inactive or non-existent"
         );
         require(
-            usdc.balanceOf(_farm) >= _amount,
+            IERC20(usdcAddr).balanceOf(_farm) >= _amount,
             "farm balance insufficient"
         );
         IFarm(_farm).deposit(_amount);

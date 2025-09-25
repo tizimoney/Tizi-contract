@@ -17,10 +17,6 @@ interface ITokenMessenger {
     ) external returns (uint64);
 }
 
-interface IStakingToken {
-    function balanceOf(address) external view returns (uint256);
-}
-
 interface ITransmitter {
     function receiveMessage(
         bytes calldata message,
@@ -28,18 +24,27 @@ interface ITransmitter {
     ) external returns (bool);
 }
 
+/**
+ * @title Tizi MainVault
+ * @author tizi.money
+ * @notice
+ *  MainVault is deployed on the Base chain and is where USDC is first stored.
+ *  All user deposits will first be stored in MainVault, and then allocated by
+ *  Manager to vaults on other chains or strategies on the Base chain. Funds
+ *  cannot be transferred to other places. Users withdraw money from MainVault,
+ *  and funds on other chains are also sent to MainVault.
+ * 
+ *  MainVault sends USDC to vaults on other chains through CCTP. Only vault
+ *  addresses stored in vaultAddress allow transfers.
+ * 
+ *  MainVault determines the deposits, withdrawals, and harvests of the
+ *  current chain's strategy, which is managed by Manager, and the asset
+ *  information in the strategy can be viewed.
+ */
 contract MainVault is ISharedStructs, ReentrancyGuard {
-    address private usdcAddr = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
-    address private helperAddr;
-    address private swapRouter;
-    bool public helperStatus = true;
-    address public profitRecipient;
-    uint256 public profitNumerator = 100;
-    uint256 public profitDenominator = 1000;
+    address public helperAddr;
     address public tokenMessenger;
 
-    mapping(address => uint256) public principal;
-    mapping(address => mapping(address => uint256)) public tokenProfit;
     /// (vault address => is allowed to transfer though CCTP)
     mapping(address => bool) public vaultAddress;
 
@@ -52,18 +57,16 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
     constructor(
         address _accessAddr,
         address _transmitter,
-        address _swapRouter,
-        address _tokenMessenger
+        address _tokenMessenger,
+        address _usdc
     ) {
         authorityControl = IAuthorityControl(_accessAddr);
-        usdc = IERC20(usdcAddr);
+        usdc = IERC20(_usdc);
         transmitter = ITransmitter(_transmitter);
-        swapRouter = _swapRouter;
         tokenMessenger = _tokenMessenger;
     }
 
     /*    -------------- Events --------------    */
-    event SetFarm(address indexed farm, uint256 indexed chainId);
     event TrasferDetails(
         address indexed from,
         address indexed to,
@@ -72,8 +75,7 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
     event BridgeToInfo(uint256 dstDomain, address indexed to, uint256 amount);
     event BridgeInInfo(bytes32 messageHash);
     event SetControl(address newControl);
-    event SetHelper(address newHelper, bool newStatus);
-    event SetSwapRouter(address swapRouter);
+    event SetHelper(address newHelper);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
@@ -132,19 +134,18 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
         uint32 _destDomain,
         address _receiver
     ) public onlyManager {
-        require(helperStatus == false, "helper is not set");
         require(_amount > 0, "Amount must be greater than zero");
         require(vaultAddress[_receiver] == true, "Receiver is not vault");
         bytes32 receiverBytes32 = addressToBytes32(_receiver);
         require(
-            IERC20(usdcAddr).approve(tokenMessenger, _amount) == true,
+            usdc.approve(tokenMessenger, _amount) == true,
             "approve fail"
         );
         ITokenMessenger(tokenMessenger).depositForBurn(
             _amount,
             _destDomain,
             receiverBytes32,
-            usdcAddr
+            address(usdc)
         );
         emit BridgeToInfo(_destDomain, _receiver, _amount);
     }
@@ -222,7 +223,7 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
             usdc.balanceOf(_farm) >= _amount,
             "farm balance insufficient"
         );
-        IFarm(_farm).deposit(_amount, false);
+        IFarm(_farm).deposit(_amount);
     }
 
     /// @notice Call withdraw function in strategy, withdraw a certain amount of USDC to strategy contract.
@@ -234,7 +235,7 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
             strategyManager.isStrategyActive(_chainId, _farm) == true,
             "Farm inactive or non-existent"
         );
-        uint256 amountOut = IFarm(_farm).withdraw(_amount);
+        IFarm(_farm).withdraw(_amount);
     }
 
     /// @notice Call harvest function in strategy, withdraw additional tokens to strategy contract.
@@ -256,7 +257,6 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
         address _to,
         uint256 _amount
     ) external nonReentrant returns (bool) {
-        require(helperStatus == false, "Uninitialized helper address.");
         require(msg.sender == helperAddr, "Invalid caller address.");
         require(_amount > 0, "Amount must be greater than zero");
         usdc.transfer(_to, _amount);
@@ -265,31 +265,14 @@ contract MainVault is ISharedStructs, ReentrancyGuard {
     }
 
     function setHelper(address _helperAddr) public onlyAdmin {
-        require(helperStatus == true, "helper is already set");
+        require(_helperAddr != helperAddr && _helperAddr != address(0), "Wrong address");
         helperAddr = _helperAddr;
-        helperStatus = false;
-        emit SetHelper(_helperAddr, false);
-    }
-
-    function setHelperStatus(bool _helperstatus) public onlyAdmin {
-        helperStatus = _helperstatus;
+        emit SetHelper(_helperAddr);
     }
 
     function setControl(address _control) public onlyAdmin {
+        require(_control != address(strategyManager) && _control != address(0), "Wrong address");
         strategyManager = IStrategyManager(_control);
         emit SetControl(_control);
-    }
-
-    function setProfitRate(uint256 _rate) public onlyAdmin {
-        profitNumerator = _rate;
-    }
-
-    function setProfitAccount(address _account) public onlyAdmin {
-        profitRecipient = _account;
-    }
-
-    function setSwapRouter(address _router) public onlyAdmin {
-        swapRouter = _router;
-        emit SetSwapRouter(_router);
     }
 }

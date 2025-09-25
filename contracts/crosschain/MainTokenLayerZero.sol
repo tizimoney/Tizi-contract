@@ -8,6 +8,14 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
 import {ITokenStats} from "../interfaces/ITokenStats.sol";
 
+/**
+ * @title Tizi MainTokenLayerZero
+ * @author tizi.money
+ * @notice
+ *  MainTokenLayerZero is deployed on the Base chain. When messages are 
+ *  sent across chains through LayerZero, MainTokenLayerZero will receive 
+ *  information from other chains, parse it and store it.
+ */
 contract MainTokenLayerZero is OApp {
     using ECDSA for bytes32;
 
