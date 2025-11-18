@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
 import { OApp, Origin, MessagingFee } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-
-interface IDepositHelper {
-    function calculateLiquidity() external view returns (uint256, bool);
-}
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
 
 /**
  * @title Tizi StrategyManager
@@ -20,9 +17,8 @@ interface IDepositHelper {
  *  the addition, activation and deletion of strategies are controlled
  *  by the Admin.
  */
-contract StrategyManager is OApp {
-    using OptionsBuilder for bytes;
-
+contract SubStrategyManager is OApp {
+    using ECDSA for bytes32;
     struct Strategy {
         bool exists;
         bool active;
@@ -34,14 +30,17 @@ contract StrategyManager is OApp {
         address strategyAddress;
     }
 
+    struct LiquidityInfo {
+        bool canActive;
+        uint256 time;
+    }
+
     mapping(uint256 => mapping(address => Strategy)) public strategies;
     mapping(uint256 => address[]) public activeStrategyAddresses;
     StrategyInfo[] private strategyList;
     uint256[] private chainIDs;
-    address public depositHelper;
     uint256 cooldownTime = 3 days;
-    bytes public _options;
-    bytes public liquidityInfo;
+    LiquidityInfo public liquidityInfo;
 
     IAuthorityControl private authorityControl;
 
@@ -49,18 +48,19 @@ contract StrategyManager is OApp {
     constructor(
         address _endpoint,
         address _owner,
-        address _accessAddr, 
-        address _depositHelper
+        address _accessAddr
     ) OApp(_endpoint, _owner) Ownable(_owner) {
         authorityControl = IAuthorityControl(_accessAddr);
-        depositHelper = _depositHelper;
     }
 
     /*    -------------- Events --------------    */
     event AddStrategy(uint256 chainID, address strategy);
     event ActivateStrategy(uint256 chainID, address strategy);
     event RemoveStrategy(uint256 chainID, address strategy);
-    event MessageSent(bytes payload , uint32 dstEid);
+    event SignedMessageVerified(
+        address indexed signer,
+        bytes32 indexed messageHash
+    );
 
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
@@ -86,6 +86,15 @@ contract StrategyManager is OApp {
     }
 
     /*    ---------- Read Functions -----------    */
+    function toEthSignedMessageHash(
+        bytes32 hash
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked("\x19Ethereum Signed Message:\n32", hash)
+            );
+    }
+
     function getActiveAddrByChainId(
         uint256 _chainId
     ) public view returns (address[] memory) {
@@ -189,26 +198,7 @@ contract StrategyManager is OApp {
         return address(uint160(uint256(_b)));
     }
 
-    function calculateLiquidity() public view returns (uint256, bool) {
-        return IDepositHelper(depositHelper).calculateLiquidity();
-    }
-
-    function quote(
-        uint32 _dstEid,
-        string memory _signedMessage,
-        bool _payInLzToken
-    ) public view returns (MessagingFee memory fee) {
-        bytes memory messageBytes = abi.encode(_signedMessage, liquidityInfo);
-        bytes memory payload = messageBytes;
-        fee = _quote(_dstEid, payload, _options, _payInLzToken);
-    }
-
     /*    ---------- Write Functions ----------    */
-    function setLiquidityInfo() public onlyAdmin {
-        (, bool canActive) = IDepositHelper(depositHelper).calculateLiquidity();
-        bytes memory tokenCode = abi.encode(canActive, block.timestamp);
-        liquidityInfo = tokenCode;
-    }
 
     /// @notice Used to add a new strategy.
     /// @param _chainID The chain id of given chain.
@@ -267,8 +257,8 @@ contract StrategyManager is OApp {
             "Adding time is less than the cooldown time."
         );
 
-        (, bool canActive) = IDepositHelper(depositHelper).calculateLiquidity();
-        require(canActive, "No liquidity to active strategy!");
+        require(block.timestamp - liquidityInfo.time <= 7200, "Liquidity information over 120 minutes!");
+        require(liquidityInfo.canActive, "No liquidity to active strategy!");
 
         strategies[_chainID][_strategyAddress].active = true;
         activeStrategyAddresses[_chainID].push(_strategyAddress);
@@ -315,24 +305,6 @@ contract StrategyManager is OApp {
         emit RemoveStrategy(_chainID, _strategyAddress);
     }
 
-    function send(
-        uint32 _dstEid,
-        bytes calldata _signedMessage
-    ) external payable onlyAdmin {
-        bytes memory messageBytes = abi.encode(_signedMessage, liquidityInfo);
-        bytes memory payload = messageBytes;
-
-        _lzSend(
-            _dstEid,
-            payload,
-            _options,
-            MessagingFee(msg.value, 0),
-            payable(msg.sender)
-        );
-
-        emit MessageSent(payload, _dstEid);
-    }
-
     function setCooldownTime(uint256 _cooldownTime) public onlyAdmin {
         require(_cooldownTime != 0 && _cooldownTime != cooldownTime, "Wrong cooldown time!");
         cooldownTime = _cooldownTime;
@@ -342,32 +314,30 @@ contract StrategyManager is OApp {
         _setPeer(_eid, _peer);
     }
 
-    function setOptions(uint128 GAS_LIMIT, uint128 MSG_VALUE) public onlyAdmin {
-        bytes memory new_options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(GAS_LIMIT, MSG_VALUE);
-        _options = new_options;
-    }
-
-    function setDepositHelper(address _helper) public onlyAdmin {
-        require(_helper != address(0) && _helper != depositHelper, "Wrong address!");
-        depositHelper = _helper;
-    }
-
-    /**
-     * @dev Called when data is received from the protocol. It overrides the equivalent function in the parent contract.
-     * Protocol messages are defined as packets, comprised of the following parameters.
-     * @param _origin A struct containing information about where the packet came from.
-     * @param _guid A global unique identifier for tracking the packet.
-     * @param payload Encoded message.
-     */
     function _lzReceive(
-        Origin calldata _origin,
-        bytes32 _guid,
+        Origin calldata,
+        bytes32,
         bytes calldata payload,
         address,  // Executor address as specified by the OApp.
         bytes calldata  // Any extra data or options to trigger on receipt.
     ) internal override {
-        // Decode the payload to get the message
-        // In this case, type is string, but depends on your encoding!
-        //data = abi.decode(payload, (string));
+        (bytes memory signedMessage, bytes memory message) = abi.decode(
+            payload,
+            (bytes, bytes)
+        );
+        bytes32 hashMessage = keccak256(message);
+        bytes32 ethMessage = toEthSignedMessageHash(hashMessage);
+        address signer = ethMessage.recover(signedMessage);
+        require(
+            authorityControl.hasRole(
+                authorityControl.DEFAULT_ADMIN_ROLE(),
+                signer
+            ),
+            "Not authorized"
+        );
+        (bool canActive, uint256 time) = abi.decode(message, (bool, uint256));
+        liquidityInfo.canActive = canActive;
+        liquidityInfo.time = time;
+        emit SignedMessageVerified(signer, hashMessage);
     }
 }

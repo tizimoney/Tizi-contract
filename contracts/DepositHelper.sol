@@ -120,13 +120,20 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /// @notice Calculate the balance in the vault minus the balance waiting in the NFT.
-    function calculateLiquidity() public view returns (uint256) {
+    /// @return liquidity and Can the strategy be activated
+    function calculateLiquidity() public view returns (uint256, bool) {
         uint256 totalFunds = IERC20(USDC).balanceOf(vault);
-        if (totalFunds <= nftQueueUSDC) {
-            return 0;
+        uint256 waitAmount = getWaitNFTAmount();
+        if(waitAmount == 0) {
+            return (totalFunds, true);
+        } else {
+            if (totalFunds <= waitAmount) {
+                return (0, false);
+            } else {
+                uint256 liquidity = totalFunds - waitAmount;
+                return (liquidity, true);
+            }
         }
-        uint256 liquidity = totalFunds - nftQueueUSDC;
-        return liquidity;
     }
 
     /// @notice Calculate the amount of USDC in NFTs that can be taken.
@@ -136,7 +143,9 @@ contract DepositHelper is ReentrancyGuard {
         uint256[] memory withdrawIds = getAllWithdrawNFTIds();
         for (uint256 i = 0; i < withdrawAmount; i++) {
             uint256 nftId = withdrawIds[i];
-            count += withdrawNFTs[nftId].amount;
+            if(withdrawNFTs[nftId].mintTime != 0) {
+                count += withdrawNFTs[nftId].amount;
+            }
         }
         return count;
     }
@@ -148,7 +157,9 @@ contract DepositHelper is ReentrancyGuard {
         uint256[] memory waitIds = getAllWaitNFTIds();
         for (uint256 i = 0; i < waitAmount; i++) {
             uint256 nftId = waitIds[i];
-            count += withdrawNFTs[nftId].amount;
+            if(withdrawNFTs[nftId].mintTime != 0) {
+                count += withdrawNFTs[nftId].amount;
+            }
         }
         return count;
     }
@@ -160,7 +171,9 @@ contract DepositHelper is ReentrancyGuard {
         if (nftWithdrawQueue.length > 0) {
             for (uint i = 0; i < nftWithdrawQueue.length; i++) {
                 uint256 queueId = nftWithdrawQueue[i];
-                amount += withdrawNFTs[queueId].amount;
+                if(withdrawNFTs[queueId].mintTime != 0){
+                    amount += withdrawNFTs[queueId].amount;
+                }
             }
         }
         return amount;
@@ -176,7 +189,7 @@ contract DepositHelper is ReentrancyGuard {
         if (queue.length > 0) {
             for (uint i = 0; i < queue.length; i++) {
                 uint256 queueId = queue[i];
-                if (withdrawNFTs[queueId].canWithdraw == false) {
+                if (withdrawNFTs[queueId].mintTime != 0 && withdrawNFTs[queueId].canWithdraw == false) {
                     nftQueue[count] = withdrawNFTs[queueId].tokenId;
                     count++;
                 }
@@ -195,7 +208,7 @@ contract DepositHelper is ReentrancyGuard {
         if (queue.length > 0) {
             for (uint i = 0; i < queue.length; i++) {
                 uint256 queueId = queue[i];
-                if (withdrawNFTs[queueId].canWithdraw == true) {
+                if (withdrawNFTs[queueId].mintTime != 0 && withdrawNFTs[queueId].canWithdraw == true) {
                     nftQueue[count] = withdrawNFTs[queueId].tokenId;
                     count++;
                 }
@@ -213,7 +226,7 @@ contract DepositHelper is ReentrancyGuard {
         if (nftLength > 0) {
             for (uint i = 0; i < nftLength; i++) {
                 uint256 queueId = queue[i];
-                if (withdrawNFTs[queueId].canWithdraw == false) {
+                if (withdrawNFTs[queueId].mintTime != 0 && withdrawNFTs[queueId].canWithdraw == false) {
                     count++;
                 }
             }
@@ -230,7 +243,7 @@ contract DepositHelper is ReentrancyGuard {
         if (nftLength > 0) {
             for (uint i = 0; i < nftLength; i++) {
                 uint256 queueId = queue[i];
-                if (withdrawNFTs[queueId].canWithdraw == false) {
+                if (withdrawNFTs[queueId].mintTime != 0 && withdrawNFTs[queueId].canWithdraw == false) {
                     count = count + withdrawNFTs[queueId].amount;
                 }
             }
@@ -243,10 +256,13 @@ contract DepositHelper is ReentrancyGuard {
     function getAllWaitNFTIds() public view returns (uint256[] memory) {
         uint256 waitAmount = countAllWaitNFT();
         uint256[] memory nftIds = new uint256[](waitAmount);
-        for (uint256 i = 0; i < waitAmount; i++) {
+        uint256 totalSupply = INFT(nft).totalSupply();
+        uint256 idx = 0;
+        for (uint256 i = 0; i < totalSupply; i++) {
             uint256 nftId = INFT(nft).tokenByIndex(i);
-            if (withdrawNFTs[nftId].canWithdraw == false) {
-                nftIds[i] = nftId;
+            if (withdrawNFTs[nftId].mintTime != 0 && withdrawNFTs[nftId].canWithdraw == false) {
+                nftIds[idx] = nftId;
+                idx++;
             }
         }
         return nftIds;
@@ -257,10 +273,13 @@ contract DepositHelper is ReentrancyGuard {
     function getAllWithdrawNFTIds() public view returns (uint256[] memory) {
         uint256 withdrawAmount = countAllWithdrawNFT();
         uint256[] memory nftIds = new uint256[](withdrawAmount);
-        for (uint256 i = 0; i < withdrawAmount; i++) {
+        uint256 totalSupply = INFT(nft).totalSupply();
+        uint256 idx = 0;
+        for (uint256 i = 0; i < totalSupply; i++) {
             uint256 nftId = INFT(nft).tokenByIndex(i);
-            if (withdrawNFTs[nftId].canWithdraw == true) {
-                nftIds[i] = nftId;
+            if (withdrawNFTs[nftId].mintTime != 0 && withdrawNFTs[nftId].canWithdraw == true) {
+                nftIds[idx] = nftId;
+                idx++;
             }
         }
         return nftIds;
@@ -285,7 +304,7 @@ contract DepositHelper is ReentrancyGuard {
         uint256 totalSupply = INFT(nft).totalSupply();
         for (uint256 i = 0; i < totalSupply; i++) {
             uint256 nftId = INFT(nft).tokenByIndex(i);
-            if ( withdrawNFTs[nftId].canWithdraw == false) {
+            if (withdrawNFTs[nftId].mintTime != 0 && withdrawNFTs[nftId].canWithdraw == false) {
                 count++;
             }
         }
@@ -299,7 +318,7 @@ contract DepositHelper is ReentrancyGuard {
         uint256 totalSupply = INFT(nft).totalSupply();
         for (uint256 i = 0; i < totalSupply; i++) {
             uint256 nftId = INFT(nft).tokenByIndex(i);
-            if (withdrawNFTs[nftId].canWithdraw == true) {
+            if (withdrawNFTs[nftId].mintTime != 0 && withdrawNFTs[nftId].canWithdraw == true) {
                 count++;
             }
         }
@@ -389,7 +408,39 @@ contract DepositHelper is ReentrancyGuard {
         require(amountOut <= IERC20(USDC).balanceOf(vault), 
             "Amount out token bigger than vault balance");
         
-        IVault(vault).sendToUser(nftVault, amountOut);
+        require(
+            IVault(vault).sendToUser(nftVault, amountOut) == true, 
+            "transfer failed"
+        );
+        emit TransferToNFTVault(amountOut, count, block.timestamp);
+        return true;
+    }
+
+    function fulfillNFTBatch(uint256[] calldata nftIds) external returns (bool) {
+        require(
+            authorityControl.hasRole(
+                authorityControl.MANAGER_ROLE(),
+                msg.sender
+            ),
+            "Not authorized"
+        );
+        uint256 disposable = IERC20(USDC).balanceOf(vault);
+        uint256 amountOut = 0;
+        uint256 count = 0;
+        for (uint i = 0; i < nftIds.length; i++) {
+            uint256 nftId = nftIds[i];
+            if (withdrawNFTs[nftId].mintTime != 0 && withdrawNFTs[nftId].canWithdraw == false) {
+                uint256 amt = withdrawNFTs[nftId].amount;
+                if (amt <= disposable) {
+                    withdrawNFTs[nftId].canWithdraw = true;
+                    disposable -= amt;
+                    amountOut += amt;
+                    count++;
+                }
+            }
+        }
+        require(amountOut <= IERC20(USDC).balanceOf(vault), "Amount out token bigger than vault balance");
+        require(IVault(vault).sendToUser(nftVault, amountOut), "Transfer failed");
         emit TransferToNFTVault(amountOut, count, block.timestamp);
         return true;
     }
@@ -433,17 +484,17 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /// @notice Used to withdraw an NFT.
-    /// @param _queueId The id of NFT.
-    function withdrawFromNFT(uint256 _queueId) external nonReentrant {
+    /// @param _nftId The id of NFT.
+    function withdrawFromNFT(uint256 _nftId) external nonReentrant {
         require(
-            withdrawNFTs[_queueId].mintTime != 0,
+            withdrawNFTs[_nftId].mintTime != 0,
             "nft is not in the queue"
         );
         require(
-            withdrawNFTs[_queueId].canWithdraw == true,
+            withdrawNFTs[_nftId].canWithdraw == true,
             "nft has not able to withdraw"
         );
-        WithdrawNFT memory withdrawNFT = withdrawNFTs[_queueId];
+        WithdrawNFT memory withdrawNFT = withdrawNFTs[_nftId];
         uint256 needFunds = withdrawNFT.amount;
         uint256 disposable = IERC20(USDC).balanceOf(nftVault);
         require(needFunds <= disposable, "Insufficient USDC");
@@ -457,7 +508,7 @@ contract DepositHelper is ReentrancyGuard {
             "transfer failed"
         );
         nftQueueUSDC = nftQueueUSDC - withdrawNFT.amount;
-        delete withdrawNFTs[_queueId];
+        delete withdrawNFTs[_nftId];
     }
 
     /// @notice Used to withdraw all withdrawable NFTs of msg.sender.
@@ -486,7 +537,7 @@ contract DepositHelper is ReentrancyGuard {
         }
     }
 
-    function SetPoints(uint256 _points) external onlyAdmin {
+    function setPoints(uint256 _points) external onlyAdmin {
         require(_points <= 40);
         feeBasisPoints = _points;
         emit SetFeeBasisPoints(msg.sender, _points);
