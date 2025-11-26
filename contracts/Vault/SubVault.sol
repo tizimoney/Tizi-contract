@@ -252,6 +252,11 @@ contract SubVault {
         tokenMessenger = ITokenMessengerV2(_tokenMessenger);
     }
 
+    function setTransmitter(address _transmitter) external onlyAdmin {
+        require(_transmitter != address(0) && _transmitter != address(transmitter), "Wrong address");
+        transmitter = ITransmitter(_transmitter);
+    }
+
     /// @notice Transfer USDC from strategy to vault.
     /// @param _chainId The chain id where the strategy is located.
     /// @param _farm The address of strategy.
