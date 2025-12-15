@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
-import {IFarm} from "../interfaces/IFarm.sol";
-import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
+import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
+import { IERC20 } from "../interfaces/IERC20.sol";
+import { IFarm } from "../interfaces/IFarm.sol";
+import { IStrategyManager } from "../interfaces/IStrategyManager.sol";
 
 /**
  * @title Tizi SubTokenStats
@@ -18,14 +18,15 @@ import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
  *  contract and sent to MainTokenStats.
  */
 contract SubTokenStats {
-    IAuthorityControl private authorityControl;
-    IStrategyManager private strategyManager;
     IERC20 public immutable USDC;
     uint256 public immutable CHAINID;
     address public subAxelar;
     address public subLayerZero;
     address public vault;
     address public usdcAddr;
+
+    IAuthorityControl private _authorityControl;
+    IStrategyManager private _strategyManager;
 
     struct Strategy {
         uint256 chainID;
@@ -50,8 +51,8 @@ contract SubTokenStats {
         uint256 _chainID
     ) {
         USDC = IERC20(_USDC);
-        authorityControl = IAuthorityControl(_access);
-        strategyManager = IStrategyManager(_control);
+        _authorityControl = IAuthorityControl(_access);
+        _strategyManager = IStrategyManager(_control);
         usdcAddr = _USDC;
         CHAINID = _chainID;
     }
@@ -69,8 +70,8 @@ contract SubTokenStats {
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -213,7 +214,7 @@ contract SubTokenStats {
     function strategiesStats() public onlyAxelarorLZ {
         _clearDataByChainId();
         _addVaultInfo();
-        address[] memory activeAddresses = strategyManager
+        address[] memory activeAddresses = _strategyManager
             .getActiveAddrByChainId(CHAINID);
         for (uint256 i = 0; i < activeAddresses.length; i++) {
             address contractAddress = activeAddresses[i];
@@ -253,22 +254,22 @@ contract SubTokenStats {
         }
     }
 
-    function setAxelar(address _axelar) public onlyAdmin {
-        require(_axelar != address(0) && _axelar != subAxelar, "Wrong address");
-        subAxelar = _axelar;
-        emit SetAxelar(_axelar);
+    function setAxelar(address newAxelar) public onlyAdmin {
+        require(newAxelar != address(0) && newAxelar != subAxelar, "Wrong address");
+        subAxelar = newAxelar;
+        emit SetAxelar(newAxelar);
     }
 
-    function setLayerZero(address _layerzero) public onlyAdmin {
-        require(_layerzero != address(0) && _layerzero != subLayerZero, "Wrong address");
-        subLayerZero = _layerzero;
-        emit SetLayerZero(_layerzero);
+    function setLayerZero(address newLayerzero) public onlyAdmin {
+        require(newLayerzero != address(0) && newLayerzero != subLayerZero, "Wrong address");
+        subLayerZero = newLayerzero;
+        emit SetLayerZero(newLayerzero);
     }
 
-    function setVault(address _vault) public onlyAdmin {
-        require(_vault != address(0) && _vault != vault, "Wrong address");
-        vault = _vault;
-        emit SetVault(_vault);
+    function setVault(address newVault) public onlyAdmin {
+        require(newVault != address(0) && newVault != vault, "Wrong address");
+        vault = newVault;
+        emit SetVault(newVault);
     }
 
     /// @notice Clear statistics, called before each statistics. 

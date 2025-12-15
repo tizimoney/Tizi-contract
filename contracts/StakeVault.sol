@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
-import {IERC20} from "./interfaces/IERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title Tizi StakeVault
@@ -16,10 +16,9 @@ contract StakeVault is ReentrancyGuard {
     address public sTD;
     address public td;
 
-    IAuthorityControl private authorityControl;
+    IAuthorityControl private _authorityControl;
 
-    
-    event TrasferDetails(
+    event TransferDetails(
         address indexed from,
         address indexed to,
         uint256 indexed amount
@@ -31,14 +30,14 @@ contract StakeVault is ReentrancyGuard {
         address _accessAddr,
         address _td
     ) {
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
         td = _td;
     }
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -47,27 +46,27 @@ contract StakeVault is ReentrancyGuard {
     }
 
     function sendToUser(
-        address _to, 
-        uint256 _amount
+        address to,
+        uint256 amount
     ) external nonReentrant returns (bool) {
         require(sTD != address(0), "Uninitialized staking pool address.");
         require(msg.sender == sTD, "Invalid caller address.");
-        require(_amount > 0, "Amount must be greater than zero");
-        require(IERC20(td).balanceOf(address(this)) >= _amount, "No enough balance");
-        IERC20(td).transfer(_to, _amount);
-        emit TrasferDetails(address(this), _to, _amount);
+        require(amount > 0, "Amount must be greater than zero");
+        require(IERC20(td).balanceOf(address(this)) >= amount, "No enough balance");
+        IERC20(td).transfer(to, amount);
+        emit TransferDetails(address(this), to, amount);
         return true;
     }
 
-    function setSTD(address _sTD) external onlyAdmin {
-        require(_sTD != address(0) && _sTD != sTD, "Wrong address");
-        sTD = _sTD;
-        emit SetNewSTD(_sTD);
+    function setSTD(address newSTD) external onlyAdmin {
+        require(newSTD != address(0) && newSTD != sTD, "Wrong address");
+        sTD = newSTD;
+        emit SetNewSTD(newSTD);
     }
 
-    function setTD(address _td) external onlyAdmin {
-        require(_td != address(0) && _td != td, "Wrong address");
-        td = _td;
-        emit SetNewTD(_td);
+    function setTD(address newTD) external onlyAdmin {
+        require(newTD != address(0) && newTD != td, "Wrong address");
+        td = newTD;
+        emit SetNewTD(newTD);
     }
 }

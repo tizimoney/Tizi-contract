@@ -2,12 +2,12 @@
 
 pragma solidity ^0.8.20;
 
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
-import {IERC20} from "./interfaces/IERC20.sol";
-import {INFT} from "./interfaces/INFT.sol";
-import {IVault} from "./interfaces/IVault.sol";
-import {ITD} from "./interfaces/ITD.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
+import { IERC20 } from "./interfaces/IERC20.sol";
+import { INFT } from "./interfaces/INFT.sol";
+import { IVault } from "./interfaces/IVault.sol";
+import { ITD } from "./interfaces/ITD.sol";
 
 /**
  * @title Tizi DepositHelper
@@ -26,12 +26,15 @@ import {ITD} from "./interfaces/ITD.sol";
 contract DepositHelper is ReentrancyGuard {
     uint256 public constant PRECISION_DELTA = 10 ** 12;
     uint256 public feeBasisPoints = 40;
-
-    uint256 private nftQueueIds;
-    address public TiziDollar;
+    address public tiziDollar;
     address public USDC;
+    address public vault;
+    address public nft;
+    uint256 public nftQueueUSDC;
+    address public nftVault;
 
-    IAuthorityControl private authorityControl;
+    uint256 private _nftQueueIds;
+    IAuthorityControl private _authorityControl;
 
     struct WithdrawNFT {
         uint256 tokenId;
@@ -43,11 +46,6 @@ contract DepositHelper is ReentrancyGuard {
 
     mapping(uint256 => WithdrawNFT) public withdrawNFTs;
 
-    address public vault;
-    address public nft;
-    uint256 public nftQueueUSDC;
-    address public nftVault;
-
     /*    ------------ Constructor ------------    */
     constructor(
         address _accessAddr,
@@ -57,8 +55,8 @@ contract DepositHelper is ReentrancyGuard {
         address _nft,
         address _nftVault
     ) {
-        authorityControl = IAuthorityControl(_accessAddr);
-        TiziDollar = _tiziDollar;
+        _authorityControl = IAuthorityControl(_accessAddr);
+        tiziDollar = _tiziDollar;
         USDC = _usdc;
         vault = _vault;
         nft = _nft;
@@ -84,8 +82,8 @@ contract DepositHelper is ReentrancyGuard {
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -94,34 +92,34 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /*    ---------- Read Functions -----------    */
-    function balanceofUSDC(address a) public view returns (uint256) {
-        return IERC20(USDC).balanceOf(a);
+    function balanceOfUSDC(address account) public view returns (uint256) {
+        return IERC20(USDC).balanceOf(account);
     }
 
-    function balanceofTiziDollar(address a) public view returns (uint256) {
-        return ITD(TiziDollar).balanceOf(a);
+    function balanceOfTiziDollar(address account) public view returns (uint256) {
+        return ITD(tiziDollar).balanceOf(account);
     }
 
-    function TDExchangeAmount(uint256 amount) public view returns (uint256) {
-        uint256 TDamount = amount * TDExchangeRate() / 100000;
-        return TDamount;
+    function tdExchangeAmount(uint256 amount) public view returns (uint256) {
+        uint256 tdAmount = amount * tdExchangeRate() / 100000;
+        return tdAmount;
     }
 
-    function TDExchangeRate() public view returns (uint256) {
+    function tdExchangeRate() public view returns (uint256) {
         return 100000 - feeBasisPoints;
     }
 
     function getTxId(
-        uint256 _timestamp,
-        uint256 _amount,
-        address _walletAddress
+        uint256 timestamp,
+        uint256 amount,
+        address walletAddress
     ) private pure returns (bytes32) {
-        return keccak256(abi.encode(_timestamp, _amount, _walletAddress));
+        return keccak256(abi.encode(timestamp, amount, walletAddress));
     }
 
     /// @notice Calculate the balance in the vault minus the balance waiting in the NFT.
     /// @return liquidity and Can the strategy be activated
-    function calculateLiquidity() public view returns (uint256, bool) {
+    function calculateLiquidity() public view returns (uint256 liquidity, bool canActive) {
         uint256 totalFunds = IERC20(USDC).balanceOf(vault);
         uint256 waitAmount = getWaitNFTAmount();
         if(waitAmount == 0) {
@@ -130,7 +128,7 @@ contract DepositHelper is ReentrancyGuard {
             if (totalFunds <= waitAmount) {
                 return (0, false);
             } else {
-                uint256 liquidity = totalFunds - waitAmount;
+                liquidity = totalFunds - waitAmount;
                 return (liquidity, true);
             }
         }
@@ -165,9 +163,9 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /// @notice Calculate the amount of USDC in NFT of msg.sender.
-    function calculateUserTotalNFTFunds(address _user) public view returns (uint256) {
+    function calculateUserTotalNFTFunds(address user) public view returns (uint256) {
         uint256 amount;
-        uint256[] memory nftWithdrawQueue = NFTWithdrawQueue(_user);
+        uint256[] memory nftWithdrawQueue = NFTWithdrawQueue(user);
         if (nftWithdrawQueue.length > 0) {
             for (uint i = 0; i < nftWithdrawQueue.length; i++) {
                 uint256 queueId = nftWithdrawQueue[i];
@@ -178,12 +176,12 @@ contract DepositHelper is ReentrancyGuard {
         }
         return amount;
     }
-    
+
     /// @notice Get all waiting NFTs of msg.sender.
     /// @return TokenIDs of NFT.
-    function NFTWaitQueue(address _user) public view returns (uint256[] memory) {
-        uint256[] memory queue = INFT(nft).ownerTokenIds(_user);
-        uint256 waitLength = countUsersWaitNFT(_user);
+    function NFTWaitQueue(address user) public view returns (uint256[] memory) {
+        uint256[] memory queue = INFT(nft).ownerTokenIds(user);
+        uint256 waitLength = countUsersWaitNFT(user);
         uint256 count = 0;
         uint256[] memory nftQueue = new uint256[](waitLength);
         if (queue.length > 0) {
@@ -199,10 +197,10 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /// @notice Get all withdrawing NFTs of msg.sender.
-    /// @return TokenIDs of NFT.
-    function NFTWithdrawQueue(address _user) public view returns (uint256[] memory) {
-        uint256[] memory queue = INFT(nft).ownerTokenIds(_user);
-        uint256 withdrawLength = queue.length - countUsersWaitNFT(_user);
+    /// @return withdrawQueue TokenIDs of NFT.
+    function NFTWithdrawQueue(address user) public view returns (uint256[] memory) {
+        uint256[] memory queue = INFT(nft).ownerTokenIds(user);
+        uint256 withdrawLength = queue.length - countUsersWaitNFT(user);
         uint256 count = 0;
         uint256[] memory nftQueue = new uint256[](withdrawLength);
         if (queue.length > 0) {
@@ -219,9 +217,9 @@ contract DepositHelper is ReentrancyGuard {
 
     /// @notice Get the amount of waiting NFTs of msg.sender.
     /// @return Amount of NFT.
-    function countUsersWaitNFT(address _user) public view returns (uint256) {
+    function countUsersWaitNFT(address user) public view returns (uint256) {
         uint256 count;
-        uint256[] memory queue = INFT(nft).ownerTokenIds(_user);
+        uint256[] memory queue = INFT(nft).ownerTokenIds(user);
         uint256 nftLength = queue.length;
         if (nftLength > 0) {
             for (uint i = 0; i < nftLength; i++) {
@@ -236,9 +234,9 @@ contract DepositHelper is ReentrancyGuard {
 
     /// @notice Get the amount of withdrawing NFTs of msg.sender.
     /// @return Amount of NFT.
-    function usersWaitNFTAmount(address _user) public view returns (uint256) {
+    function usersWaitNFTAmount(address user) public view returns (uint256) {
         uint256 count;
-        uint256[] memory queue = INFT(nft).ownerTokenIds(_user);
+        uint256[] memory queue = INFT(nft).ownerTokenIds(user);
         uint256 nftLength = queue.length;
         if (nftLength > 0) {
             for (uint i = 0; i < nftLength; i++) {
@@ -326,32 +324,32 @@ contract DepositHelper is ReentrancyGuard {
     }
 
     /*    ---------- Write Functions ----------    */
-    function _transferFromWallet(uint256 amount_wei) private returns (bool) {
-        bool b = IERC20(USDC).transferFrom(msg.sender, vault, amount_wei);
-        return b;
+    function _transferFromWallet(uint256 amountWei) private returns (bool) {
+        bool success = IERC20(USDC).transferFrom(msg.sender, vault, amountWei);
+        return success;
     }
 
-    function _mint(address _user, uint256 _amount) private {
-        ITD(TiziDollar).mint(_amount, _user);
-        emit MintTiziDollar(_user, _amount, TiziDollar);
+    function _mint(address user, uint256 amount) private {
+        ITD(tiziDollar).mint(amount, user);
+        emit MintTiziDollar(user, amount, tiziDollar);
     }
 
     /// @notice Called by user, deposit to project.
-    /// @param amount_wei The amount of USDC in wei.
-    function deposit(uint256 amount_wei) external nonReentrant {
-        require(amount_wei >= 10 ** 6, "Minimum deposit: 1 USDC.");
-        uint256 amount_usdc = amount_wei * PRECISION_DELTA;
+    /// @param amountWei The amount of USDC in wei.
+    function deposit(uint256 amountWei) external nonReentrant {
+        require(amountWei >= 10 ** 6, "Minimum deposit: 1 USDC.");
+        uint256 usdcAmount = amountWei * PRECISION_DELTA;
         require(
-            balanceofUSDC(msg.sender) >= amount_wei,
+            balanceOfUSDC(msg.sender) >= amountWei,
             "Insufficient token balance"
         );
         require(
-            _transferFromWallet(amount_wei) == true,
+            _transferFromWallet(amountWei) == true,
             "USDC transfer unsuccessful"
         );
-        uint256 _TDamount = amount_usdc;
-        _mint(msg.sender, _TDamount);
-        emit Deposit(msg.sender, amount_wei);
+        uint256 tdAmount = usdcAmount;
+        _mint(msg.sender, tdAmount);
+        emit Deposit(msg.sender, amountWei);
     }
 
     /// @notice When the mainVault balance is insufficient, an NFT will be minted for the user.
@@ -363,34 +361,27 @@ contract DepositHelper is ReentrancyGuard {
             tokenId,
             block.timestamp,
             amount,
-            nftQueueIds,
+            _nftQueueIds,
             false
         );
-        withdrawNFTs[nftQueueIds] = withdrawNFT;
+        withdrawNFTs[_nftQueueIds] = withdrawNFT;
         bytes32 txId = keccak256(
             abi.encode(
                 tokenId,
                 block.timestamp,
                 amount,
-                nftQueueIds,
+                _nftQueueIds,
                 false
             )
         );
         nftQueueUSDC = nftQueueUSDC + amount;
-        nftQueueIds++;
+        _nftQueueIds++;
         emit QueueID(txId);
         return txId;
     }
 
     /// @notice Called by manager, make some NFTs withdrawable based on the balance in mainVault.
-    function fulfillNFT() external returns (bool) {
-        require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
-                msg.sender
-            ),
-            "Not authorized"
-        );
+    function fulfillNFT() external onlyAdmin returns (bool) {
         uint256[] memory nftIds = getAllWaitNFTIds();
         uint256 disposable = IERC20(USDC).balanceOf(vault);
         uint256 amountOut = 0;
@@ -405,25 +396,20 @@ contract DepositHelper is ReentrancyGuard {
             }
         }
 
-        require(amountOut <= IERC20(USDC).balanceOf(vault), 
-            "Amount out token bigger than vault balance");
-        
         require(
-            IVault(vault).sendToUser(nftVault, amountOut) == true, 
+            amountOut <= IERC20(USDC).balanceOf(vault),
+            "Amount out token bigger than vault balance"
+        );
+
+        require(
+            IVault(vault).sendToUser(nftVault, amountOut) == true,
             "transfer failed"
         );
         emit TransferToNFTVault(amountOut, count, block.timestamp);
         return true;
     }
 
-    function fulfillNFTBatch(uint256[] calldata nftIds) external returns (bool) {
-        require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
-                msg.sender
-            ),
-            "Not authorized"
-        );
+    function fulfillNFTBatch(uint256[] calldata nftIds) external onlyAdmin returns (bool) {
         uint256 disposable = IERC20(USDC).balanceOf(vault);
         uint256 amountOut = 0;
         uint256 count = 0;
@@ -445,19 +431,20 @@ contract DepositHelper is ReentrancyGuard {
         return true;
     }
 
-    /// @notice Called by user, when the balance in mainVault is greater than amount, 
+    /// @notice Called by user, when the balance in mainVault is greater than amount,
     /// send USDC directly, otherwise mint an NFT.
     /// @param amount The amount of USDC to withdraw.
     /// @return Txid.
     function queueWithdraw(
         uint256 amount
     ) external nonReentrant returns (bytes32) {
+        bytes32 txId;
         require(
-            balanceofTiziDollar(msg.sender) >= amount,
+            balanceOfTiziDollar(msg.sender) >= amount,
             "Insufficient TD Token"
         );
-        uint256 netAmount = TDExchangeAmount(amount);
-        ITD(TiziDollar).burn(amount, msg.sender);
+        uint256 netAmount = tdExchangeAmount(amount);
+        ITD(tiziDollar).burn(amount, msg.sender);
         uint256 liquidity = IERC20(USDC).balanceOf(vault);
         uint256 remainder = netAmount % PRECISION_DELTA;
         uint256 usdcAmount = 0;
@@ -467,34 +454,35 @@ contract DepositHelper is ReentrancyGuard {
             usdcAmount = netAmount / PRECISION_DELTA;
         }
         if (usdcAmount <= liquidity) {
-            bytes32 txId = withdraw_callback(usdcAmount);
+            txId = _withdrawCallback(usdcAmount);
             emit Withdraw(msg.sender, amount);
             return txId;
         } else {
-            bytes32 txId = _queueNFT(usdcAmount);
+            txId = _queueNFT(usdcAmount);
             return txId;
         }
     }
 
-    function withdraw_callback(uint256 _amount) private returns (bytes32) {
-        bool result = IVault(vault).sendToUser(msg.sender, _amount);
+    function _withdrawCallback(uint256 amount) private returns (bytes32) {
+        bytes32 txId;
+        bool result = IVault(vault).sendToUser(msg.sender, amount);
         require(result == true, "transfer failed");
-        bytes32 txId = keccak256(abi.encode(msg.sender, _amount, result));
+        txId = keccak256(abi.encode(msg.sender, amount, result));
         return txId;
     }
 
     /// @notice Used to withdraw an NFT.
-    /// @param _nftId The id of NFT.
-    function withdrawFromNFT(uint256 _nftId) external nonReentrant {
+    /// @param nftId The id of NFT.
+    function withdrawFromNFT(uint256 nftId) external nonReentrant {
         require(
-            withdrawNFTs[_nftId].mintTime != 0,
+            withdrawNFTs[nftId].mintTime != 0,
             "nft is not in the queue"
         );
         require(
-            withdrawNFTs[_nftId].canWithdraw == true,
+            withdrawNFTs[nftId].canWithdraw == true,
             "nft has not able to withdraw"
         );
-        WithdrawNFT memory withdrawNFT = withdrawNFTs[_nftId];
+        WithdrawNFT memory withdrawNFT = withdrawNFTs[nftId];
         uint256 needFunds = withdrawNFT.amount;
         uint256 disposable = IERC20(USDC).balanceOf(nftVault);
         require(needFunds <= disposable, "Insufficient USDC");
@@ -508,7 +496,7 @@ contract DepositHelper is ReentrancyGuard {
             "transfer failed"
         );
         nftQueueUSDC = nftQueueUSDC - withdrawNFT.amount;
-        delete withdrawNFTs[_nftId];
+        delete withdrawNFTs[nftId];
     }
 
     /// @notice Used to withdraw all withdrawable NFTs of msg.sender.
@@ -537,33 +525,33 @@ contract DepositHelper is ReentrancyGuard {
         }
     }
 
-    function setPoints(uint256 _points) external onlyAdmin {
-        require(_points <= 40);
-        feeBasisPoints = _points;
-        emit SetFeeBasisPoints(msg.sender, _points);
+    function setPoints(uint256 newPoints) external onlyAdmin {
+        require(newPoints <= 40, "Cannot exceed 40!");
+        feeBasisPoints = newPoints;
+        emit SetFeeBasisPoints(msg.sender, newPoints);
     }
 
-    function setTD(address _td) external onlyAdmin {
-        require(_td != TiziDollar && _td != address(0), "_td address wrong");
-        TiziDollar = _td;
-        emit SetNewTD(_td);
+    function setTD(address newTD) external onlyAdmin {
+        require(newTD != tiziDollar && newTD != address(0), "wrong address");
+        tiziDollar = newTD;
+        emit SetNewTD(newTD);
     }
 
-    function setVault(address _vault) external onlyAdmin {
-        require(_vault != vault && _vault != address(0), "Wrong address");
-        vault = _vault;
-        emit SetNewVault(_vault);
+    function setVault(address newVault) external onlyAdmin {
+        require(newVault != vault && newVault != address(0), "Wrong address");
+        vault = newVault;
+        emit SetNewVault(newVault);
     }
 
-    function setNFT(address _nft) external onlyAdmin {
-        require(_nft != nft && _nft != address(0), "Wrong address");
-        nft = _nft;
-        emit SetNewNFT(_nft);
+    function setNFT(address newNFT) external onlyAdmin {
+        require(newNFT != nft && newNFT != address(0), "Wrong address");
+        nft = newNFT;
+        emit SetNewNFT(newNFT);
     }
 
-    function setNFTVault(address _nftVault) external onlyAdmin {
-        require(_nftVault != nftVault && _nftVault != address(0), "Wrong address");
-        nftVault = _nftVault;
+    function setNFTVault(address newNFTVault) external onlyAdmin {
+        require(newNFTVault != nftVault && newNFTVault != address(0), "Wrong address");
+        nftVault = newNFTVault;
         emit SetNewNFTVault(nftVault);
     }
 }

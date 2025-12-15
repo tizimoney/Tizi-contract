@@ -2,10 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ITokenStats} from "./interfaces/ITokenStats.sol";
-import {IHelper} from "./interfaces/IHelper.sol";
-import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
+import { ITokenStats } from "./interfaces/ITokenStats.sol";
+import { IHelper } from "./interfaces/IHelper.sol";
+import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OFT } from "@layerzerolabs/oft-evm/contracts/OFT.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
@@ -40,9 +39,9 @@ contract TiziDollar is OFT, ERC20Permit {
     address public tokenStats;
     address public sTD;
     uint256 public mainChainId;
-    bytes public _options;
+    bytes public gasOptions;
 
-    IAuthorityControl private authorityControl;
+    IAuthorityControl private _authorityControl;
 
     /*    ------------ Constructor ------------    */
     constructor(
@@ -55,7 +54,7 @@ contract TiziDollar is OFT, ERC20Permit {
         Ownable(_delegate) 
         ERC20Permit("TD")
     {
-        authorityControl = IAuthorityControl(_access);
+        _authorityControl = IAuthorityControl(_access);
         mainChainId = _mainChainId;
     }
 
@@ -73,7 +72,6 @@ contract TiziDollar is OFT, ERC20Permit {
         uint256 indexed rebaseNonce,
         uint256 indexed rebaseTime
     );
-    event SendRebaseInfo(uint256 dstChainId, uint256 rebaseIndex);
     event SetNewMainChainID(uint256 chainID);
     event SetNewSTD(address sTD);
     event SetNewInsurancePool(address insurancePool);
@@ -82,8 +80,8 @@ contract TiziDollar is OFT, ERC20Permit {
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
         require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.MANAGER_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -93,8 +91,8 @@ contract TiziDollar is OFT, ERC20Permit {
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -103,12 +101,12 @@ contract TiziDollar is OFT, ERC20Permit {
     }
 
     /*    ---------- Read Functions -----------    */
-    function addressToBytes32(address _addr) public pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
+    function addressToBytes32(address addr) public pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 
-    function bytes32ToAddress(bytes32 _b) public pure returns (address) {
-        return address(uint160(uint256(_b)));
+    function bytes32ToAddress(bytes32 bytes32Address) public pure returns (address) {
+        return address(uint160(uint256(bytes32Address)));
     }
 
     /*    ---------- Write Functions ----------    */
@@ -147,19 +145,6 @@ contract TiziDollar is OFT, ERC20Permit {
     ) public override returns (bool) {
         require(to != address(0), "invalid recipient");
         _update(msg.sender, to, value);
-        return true;
-    }
-
-    function approve(
-        address spender,
-        uint256 value
-    ) public override returns (bool) {
-        uint256 currentAllowance = allowance(msg.sender, spender);
-        if (currentAllowance != type(uint256).max) {
-            unchecked {
-                _approve(msg.sender, spender, currentAllowance + value, true);
-            }
-        }
         return true;
     }
 
@@ -235,52 +220,52 @@ contract TiziDollar is OFT, ERC20Permit {
         _mint(profit, profitRecipient);
     }
 
-    function setHelper(address _helper) public onlyAdmin {
+    function setHelper(address newHelper) public onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(_helper != helper && _helper != address(0), "Wrong address");
-        helper = _helper;
-        emit SetHelper(_helper);
+        require(newHelper != helper && newHelper != address(0), "Wrong address");
+        helper = newHelper;
+        emit SetHelper(newHelper);
     }
 
-    function setTokenStats(address _tokenStats) public onlyAdmin {
-        require(_tokenStats != tokenStats && _tokenStats != address(0), "Wrong address");
-        tokenStats = _tokenStats;
-        emit SetTokenStats(_tokenStats);
+    function setTokenStats(address newTokenStats) public onlyAdmin {
+        require(newTokenStats != tokenStats && newTokenStats != address(0), "Wrong address");
+        tokenStats = newTokenStats;
+        emit SetTokenStats(newTokenStats);
     }
 
-    function setMainChainId(uint256 _chainid) public onlyAdmin {
-        require(_chainid != mainChainId && _chainid != 0, "Wrong chainId");
-        mainChainId = _chainid;
-        emit SetNewMainChainID(_chainid);
+    function setMainChainId(uint256 newChainId) public onlyAdmin {
+        require(newChainId != mainChainId && newChainId != 0, "Wrong chainId");
+        mainChainId = newChainId;
+        emit SetNewMainChainID(newChainId);
     }
 
-    function setSTD(address _sTD) public onlyAdmin {
-        require(_sTD != sTD && _sTD != address(0), "Wrong address");
-        sTD = _sTD;
-        emit SetNewSTD(_sTD);
+    function setSTD(address newSTD) public onlyAdmin {
+        require(newSTD != sTD && newSTD != address(0), "Wrong address");
+        sTD = newSTD;
+        emit SetNewSTD(newSTD);
     }
 
-    function setInsurancePool(address _insurancePool) public onlyAdmin {
-        require(_insurancePool != insurancePool && _insurancePool != address(0), "Wrong address");
-        insurancePool = _insurancePool;
-        emit SetNewInsurancePool(_insurancePool);
+    function setInsurancePool(address newInsurancePool) public onlyAdmin {
+        require(newInsurancePool != insurancePool && newInsurancePool != address(0), "Wrong address");
+        insurancePool = newInsurancePool;
+        emit SetNewInsurancePool(newInsurancePool);
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyAdmin {
-        _setPeer(_eid, _peer);
+    function setPeer(uint32 eid, bytes32 peer) public override onlyAdmin {
+        _setPeer(eid, peer);
     }
 
-    function setBtchPeers(uint32[] memory _eids, bytes32[] memory _peers) public onlyAdmin {
-        require(_eids.length == _peers.length, "eid amd peer length are not same");
-        for(uint256 i = 0; i < _eids.length; ++i) {
-            _setPeer(_eids[i], _peers[i]);
+    function setBatchPeers(uint32[] memory eids, bytes32[] memory bytes32Addresses) public onlyAdmin {
+        require(eids.length == bytes32Addresses.length, "eid and bytes32Addresses length are not same");
+        for(uint256 i = 0; i < eids.length; ++i) {
+            _setPeer(eids[i], bytes32Addresses[i]);
         }
     }
 
-    function setOptions(uint128 GAS_LIMIT, uint128 MSG_VALUE) public onlyAdmin {
-        bytes memory new_options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(GAS_LIMIT, MSG_VALUE);
-        _options = new_options;
+    function setOptions(uint128 gasLimit, uint128 msgValue) public onlyAdmin {
+        bytes memory newOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(gasLimit, msgValue);
+        gasOptions = newOptions;
     }
 }

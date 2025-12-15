@@ -3,15 +3,15 @@
 
 pragma solidity ^0.8.20;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {ERC721Holder} from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
-import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { ERC721Holder } from "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
 
 interface IStrategyManager {
     struct LiquidityInfo {
-        bool canActive;
+        bool canActivate;
         uint256 time;
     }
 
@@ -37,7 +37,7 @@ contract SubTimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     mapping(bytes32 id => uint256) private _timestamps;
     uint256 private _minDelay;
     address public strategyManager;
-    IAuthorityControl private authorityControl;
+    IAuthorityControl private _authorityControl;
 
     enum OperationState {
         Unset,
@@ -128,7 +128,7 @@ contract SubTimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     ) {
         _minDelay = minDelay;
         strategyManager = _strategyManager;
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
         emit MinDelayChange(0, minDelay);
     }
 
@@ -140,8 +140,8 @@ contract SubTimelockController is AccessControl, ERC721Holder, ERC1155Holder {
      */
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -364,7 +364,7 @@ contract SubTimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     ) public payable virtual onlyAdmin {
         IStrategyManager.LiquidityInfo memory liquidityInfo = IStrategyManager(strategyManager).liquidityInfo();
         require(block.timestamp - liquidityInfo.time <= 7200, "Liquidity information over 120 minutes!");
-        require(liquidityInfo.canActive, "No liquidity to upgrade strategy!");
+        require(liquidityInfo.canActivate, "No liquidity to upgrade strategy!");
 
         bytes32 id = hashOperation(target, value, payload, predecessor, salt);
 
@@ -395,7 +395,7 @@ contract SubTimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     ) public payable virtual onlyAdmin {
         IStrategyManager.LiquidityInfo memory liquidityInfo = IStrategyManager(strategyManager).liquidityInfo();
         require(block.timestamp - liquidityInfo.time <= 7200, "Liquidity information over 120 minutes!");
-        require(liquidityInfo.canActive, "No liquidity to upgrade strategy!");
+        require(liquidityInfo.canActivate, "No liquidity to upgrade strategy!");
         
         if (targets.length != values.length || targets.length != payloads.length) {
             revert TimelockInvalidOperationLength(targets.length, payloads.length, values.length);

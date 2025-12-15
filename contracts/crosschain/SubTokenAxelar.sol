@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {AxelarExecutable} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-import {IAxelarGasService} from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
-import {ITokenStats} from "../interfaces/ITokenStats.sol";
+import { AxelarExecutable } from "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
+import { IAxelarGasService } from "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
+import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
+import { ITokenStats } from "../interfaces/ITokenStats.sol";
 
 /**
  * @title Tizi SubTokenAxelar
@@ -17,12 +17,13 @@ import {ITokenStats} from "../interfaces/ITokenStats.sol";
 contract SubTokenAxelar is AxelarExecutable {
     IAxelarGasService public immutable gasService;
     ITokenStats public immutable tokenStats;
-    IAuthorityControl private authorityControl;
 
-    string destinationChain;
-    string destinationAddress;
-    uint256 sourceChainId;
-    bytes tokenCode;
+    string public destinationChain;
+    string public destinationAddress;
+    uint256 public sourceChainId;
+    bytes public tokenCode;
+
+    IAuthorityControl private _authorityControl;
 
     /*    ------------ Constructor ------------    */
     constructor(
@@ -38,7 +39,7 @@ contract SubTokenAxelar is AxelarExecutable {
         destinationChain = _destinationChain;
         destinationAddress = _destinationAddress;
         sourceChainId = _sourceChainId;
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
         tokenStats = ITokenStats(_tokenStats);
     }
 
@@ -54,8 +55,8 @@ contract SubTokenAxelar is AxelarExecutable {
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -76,9 +77,9 @@ contract SubTokenAxelar is AxelarExecutable {
     }
 
     function sendMessage(
-        bytes calldata _signedMessage
+        bytes calldata signedMessage
     ) public payable onlyAdmin {
-        bytes memory messageBytes = abi.encode(_signedMessage, tokenCode);
+        bytes memory messageBytes = abi.encode(signedMessage, tokenCode);
         bytes memory payload = messageBytes;
         gasService.payNativeGasForContractCall{value: msg.value}(
             address(this),

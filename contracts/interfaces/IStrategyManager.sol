@@ -14,19 +14,19 @@ interface IStrategyManager {
     }
 
     function getActiveAddrByChainId(
-        uint256 _chainId
+        uint256 chainId
     ) external view returns (address[] memory);
 
-    function addStrategy(uint256 _chainID, address _strategyAddress) external;
+    function addStrategy(uint256 chainID, address strategyAddress) external;
 
     function activateStrategy(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external;
 
     function removeStrategy(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external;
 
     function getAllActiveStrategies()
@@ -40,11 +40,13 @@ interface IStrategyManager {
         returns (StrategyInfo[] memory);
 
     function isStrategyActive(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external view returns (bool);
 
     function getAllChainIDs() external view returns (uint256[] memory);
 
     function countChainIDs() external view returns (uint256);
+
+    function calculateLiquidity() external view returns (uint256 liquidity, bool canActive);
 }

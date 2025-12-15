@@ -21,31 +21,31 @@ interface IHelper {
         uint256 expireDate;
     }
 
-    function balanceofUSDC(address a) external view returns (uint256);
+    function balanceOfUSDC(address a) external view returns (uint256);
 
-    function balanceofTiziDollar(address a) external view returns (uint256);
+    function balanceOfTiziDollar(address a) external view returns (uint256);
 
-    function TDExchangeAmount(uint256 amount) external view returns (uint256);
+    function tdExchangeAmount(uint256 amount) external view returns (uint256);
 
-    function DDExchangeRate() external pure returns (uint256);
+    function tdExchangeRate() external pure returns (uint256);
 
-    function deposit(uint256 amount_wei) external;
-
-    function updateExpireDate() external returns (bool);
+    function deposit(uint256 amountWei) external;
 
     function queueWithdraw(uint256 amount) external returns (bytes32);
 
-    function withdrawFromNFT(uint256 _queueId) external;
+    function withdrawFromNFT(uint256 nftId) external;
 
     function withdrawAllNFT() external;
 
-    function NFTWaitQueue() external view returns (uint256[] memory);
+    function NFTWaitQueue(address user) external view returns (uint256[] memory);
 
-    function NFTWithdrawQueue() external view returns (uint256[] memory);
+    function NFTWithdrawQueue(address user) external view returns (uint256[] memory);
 
     function withdrawNFTs(
         uint256 id
     ) external view returns (WithdrawNFT memory);
 
     function nftQueueUSDC() external view returns (uint256);
+
+    function calculateLiquidity() external view returns (uint256 liquidity, bool canActive);
 }

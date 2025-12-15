@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
 import { ITD } from "./interfaces/ITD.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
@@ -38,7 +38,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     uint24 public unstakingPeriod = 604800;
     uint256 public releasePeriod = 604800;
     uint256 public mainChainId;
-    bytes public _options;
+    bytes public gasOptions;
 
     uint256 public stakedTDAmount;
     uint256 public totalShares;
@@ -53,7 +53,8 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
 
     IERC20 public td;
     address public stakingVault;
-    IAuthorityControl private authorityControl;
+
+    IAuthorityControl private _authorityControl;
 
     struct UserUnstakingInfo {
         uint256 endTime;
@@ -79,8 +80,8 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
         require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.MANAGER_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -90,8 +91,8 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -116,7 +117,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     {
         td = _td;
         stakingVault = _stakingVault;
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
         profitRecipient = _profitRecipient;
         mainChainId = _mainChainId;
     }
@@ -134,16 +135,16 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         return 18;
     }
 
-    function addressToBytes32(address _addr) public pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
+    function addressToBytes32(address addr) public pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 
-    function bytes32ToAddress(bytes32 _b) public pure returns (address) {
-        return address(uint160(uint256(_b)));
+    function bytes32ToAddress(bytes32 bytes32Address) public pure returns (address) {
+        return address(uint160(uint256(bytes32Address)));
     }
 
-    function getUserAllUnstakeInfo(address _user) external view returns (UserUnstakingInfo[7] memory) {
-        return userUnstakingQueue[_user];
+    function getUserAllUnstakeInfo(address user) external view returns (UserUnstakingInfo[7] memory) {
+        return userUnstakingQueue[user];
     }
 
     function asset() public view override returns (address) {
@@ -185,9 +186,9 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         }
     }
 
-    function _updateReleaseAmount(uint256 _amount) internal {
+    function _updateReleaseAmount(uint256 amount) internal {
         uint256 unreleasedAmount = getUnreleasedAmount();
-        releaseAmount = unreleasedAmount.add(_amount); 
+        releaseAmount = unreleasedAmount.add(amount); 
         lastYieldTime = block.timestamp; 
     }
 
@@ -196,22 +197,22 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
      * @notice Add Yield(TD) to this contract.
      * Emits a `YieldReceived` event.
      */
-    function addYield(uint256 _amount, bool negativeGrowth) external {
+    function addYield(uint256 amount, bool negativeGrowth) external {
         require(msg.sender == address(td), "msg.sender must be TD contract");
-        require(_amount > 0, "Yield amount must > 0");
+        require(amount > 0, "Yield amount must > 0");
 
         uint256 profit;
         if(!negativeGrowth) {
-            profit = _amount.mul(profitNumerator).div(profitDenominator);
+            profit = amount.mul(profitNumerator).div(profitDenominator);
             totalProfit += profit;
-            stakedTDAmount = stakedTDAmount.add(_amount - profit);
-            _updateReleaseAmount(_amount - profit);
-            ITD(asset()).mintForYield(_amount - profit);
+            stakedTDAmount = stakedTDAmount.add(amount - profit);
+            _updateReleaseAmount(amount - profit);
+            ITD(asset()).mintForYield(amount - profit);
             ITD(asset()).mintForProfitRecipient(profitRecipient, profit);
-            emit YieldReceived(_amount - profit, false);
+            emit YieldReceived(amount - profit, false);
             emit TransferProfit(profitRecipient, profit);
         } else {
-            uint256 remainingAmount = _amount;
+            uint256 remainingAmount = amount;
 
             // step1: check released amount
             uint256 availableAssets = stakedTDAmount.sub(getUnreleasedAmount());
@@ -235,7 +236,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
                 }
             }
             
-            emit YieldReceived(_amount.sub(remainingAmount), true);
+            emit YieldReceived(amount.sub(remainingAmount), true);
         }
     }
 
@@ -258,23 +259,23 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     /**
      * @dev Add mode check to {IERC4626-withdraw}.
      */
-    function withdraw(uint256 assets, address receiver, address _owner) public virtual override returns (uint256) {
+    function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
         require(unstakingPeriod == 0, "ERC4626_MODE_ON");
-        return super.withdraw(assets, receiver, _owner);
+        return super.withdraw(assets, receiver, user);
     }
 
     /**
      * @dev Add mode check to {IERC4626-redeem}.
      */
-    function redeem(uint256 shares, address receiver, address _owner) public virtual override returns (uint256) {
+    function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
         require(unstakingPeriod == 0, "ERC4626_MODE_ON");
-        return super.redeem(shares, receiver, _owner);
+        return super.redeem(shares, receiver, user);
     }
 
     function stake(uint256 assets) external {
@@ -315,134 +316,140 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     /**
      * @notice Starts withdraw CD with shares.
      */
-    function unstake(uint256 _shares) external returns (uint256 _assets) {
+    function unstake(uint256 shares) external returns (uint256 assets) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
         require(unstakingPeriod > 0, "ERC4626_MODE_OFF");
         uint256 maxShares = maxRedeem(msg.sender);
-        if (_shares > maxShares) {
-            revert ERC4626ExceededMaxRedeem(msg.sender, _shares, maxShares);
+        if (shares > maxShares) {
+            revert ERC4626ExceededMaxRedeem(msg.sender, shares, maxShares);
         }
 
-        _assets = previewRedeem(_shares);
+        assets = previewRedeem(shares);
 
         UserUnstakingInfo[7] storage userUnstakingInfo = userUnstakingQueue[msg.sender];
         for(uint256 i = 0; i < userUnstakingInfo.length; ++i) {
             if(userUnstakingInfo[i].amount == 0 && userUnstakingInfo[i].endTime == 0) {
                 userUnstakingInfo[i].endTime = block.timestamp + unstakingPeriod;
-                userUnstakingInfo[i].amount += _assets;
+                userUnstakingInfo[i].amount += assets;
                 break;
             }
         }
 
-        _withdraw(msg.sender, stakingVault, msg.sender, _assets, _shares);
-        totalShares = totalShares.sub(_shares);
-        emit UnStake(_shares, _assets, msg.sender);    
+        _withdraw(msg.sender, stakingVault, msg.sender, assets, shares);
+        totalShares = totalShares.sub(shares);
+        emit UnStake(shares, assets, msg.sender);  
+        return assets;  
     }
 
     /**
      * @dev Add nonReetrant and pooledUSDz calculation.
      */
-    function _deposit(address _caller, address _receiver, uint256 _assets, uint256 _shares)
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
         internal
         override
         nonReentrant
     {
-        require(_assets > 0, "ASSETS_IS_ZERO");
-        require(_shares > 0, "SHARES_IS_ZERO");
+        require(assets > 0, "ASSETS_IS_ZERO");
+        require(shares > 0, "SHARES_IS_ZERO");
 
-        super._deposit(_caller, _receiver, _assets, _shares);
-        stakedTDAmount = stakedTDAmount.add(_assets);
+        super._deposit(caller, receiver, assets, shares);
+        stakedTDAmount = stakedTDAmount.add(assets);
     }
 
-    function _withdraw(address _caller, address _receiver, address _owner, uint256 _assets, uint256 _shares)
+    function _withdraw(address caller, address receiver, address user, uint256 assets, uint256 shares)
         internal
         override
         nonReentrant
     {
-        require(_assets > 0, "ASSETS_IS_ZERO");
-        require(_shares > 0, "SHARES_IS_ZERO");
+        require(assets > 0, "ASSETS_IS_ZERO");
+        require(shares > 0, "SHARES_IS_ZERO");
 
-        stakedTDAmount = stakedTDAmount.sub(_assets);
-        super._withdraw(_caller, _receiver, _owner, _assets, _shares);
+        stakedTDAmount = stakedTDAmount.sub(assets);
+        super._withdraw(caller, receiver, user, assets, shares);
     }
 
-    function rescueERC20(address _token, address _to, uint256 _amount) external onlyAdmin {
-        require(_token != address(this), "Can't rescue stTD");
+    function rescueERC20(address tokenAddress, address to, uint256 amount) external onlyAdmin {
+        require(tokenAddress != address(this), "Can't rescue stTD");
         // If is TD, check pooled amount first.
-        if (_token == asset()) {
-            require(_amount <= IERC20(_token).balanceOf(address(this)).sub(stakedTDAmount), "TD rescue amount too large");
+        if (tokenAddress == asset()) {
+            require(amount <= IERC20(tokenAddress).balanceOf(address(this)).sub(stakedTDAmount), "TD rescue amount too large");
         }
-        IERC20(_token).safeTransfer(_to, _amount);
+        IERC20(tokenAddress).safeTransfer(to, amount);
     }
 
-    function setNewTD(address _td) external onlyAdmin {
-        require(_td != address(td) && _td != address(0), "_td address wrong");
-        td = IERC20(_td);
-        emit SetNewTD(_td);
+    function setNewTD(address newTD) external onlyAdmin {
+        require(newTD != address(td) && newTD != address(0), "_td address wrong");
+        td = IERC20(newTD);
+        emit SetNewTD(newTD);
     }
 
-    function setNewStakingVault(address _stakingVault) external onlyAdmin {
+    function setNewStakingVault(address newStakingVault) external onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(_stakingVault != stakingVault && _stakingVault != address(0), "_stakingVault address wrong");
-        stakingVault = _stakingVault;
-        emit SetNewStakingVault(_stakingVault);
+        require(newStakingVault != stakingVault && newStakingVault != address(0), "_stakingVault address wrong");
+        stakingVault = newStakingVault;
+        emit SetNewStakingVault(newStakingVault);
     }
 
-    function setUnstakingPeriod(uint24 _unstakingPeriod) external onlyAdmin {
+    function setUnstakingPeriod(uint24 newUnstakingPeriod) external onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(_unstakingPeriod < MAX_UNSTAKING_PERIOD, "Should be less than maxUnstakingPeriod");
+        require(newUnstakingPeriod < MAX_UNSTAKING_PERIOD, "Should be less than maxUnstakingPeriod");
 
-        unstakingPeriod = _unstakingPeriod;
-        emit SetNewUnstakingPeriod(_unstakingPeriod);
+        unstakingPeriod = newUnstakingPeriod;
+        emit SetNewUnstakingPeriod(newUnstakingPeriod);
     }
 
-    function setReleasePeriod(uint24 _releasePeriod) external onlyAdmin {
+    function setReleasePeriod(uint24 newReleasePeriod) external onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
 
-        releasePeriod = _releasePeriod;
-        emit SetNewReleasePeriod(_releasePeriod);
+        uint256 unreleasedAmount = getUnreleasedAmount();
+        releasePeriod = newReleasePeriod;
+        if(unreleasedAmount != 0) {
+            releaseAmount = unreleasedAmount;
+            lastYieldTime = block.timestamp;
+        }
+        emit SetNewReleasePeriod(newReleasePeriod);
     }
 
-    function setProfitRecipient(address _recipient) external onlyAdmin {
+    function setProfitRecipient(address newRecipient) external onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(_recipient != profitRecipient && _recipient != address(0), "Wrong address");
-        profitRecipient = _recipient;
-        emit SetNewProfitRecipient(_recipient);
+        require(newRecipient != profitRecipient && newRecipient != address(0), "Wrong address");
+        profitRecipient = newRecipient;
+        emit SetNewProfitRecipient(newRecipient);
     }
 
-    function setProfitNumerator(uint256 _profitNumerator) external onlyAdmin {
+    function setProfitNumerator(uint256 newProfitNumerator) external onlyAdmin {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(_profitNumerator != profitNumerator, "Wrong profitNumerator");
+        require(newProfitNumerator != profitNumerator, "Wrong profitNumerator");
 
-        profitNumerator = _profitNumerator;
-        emit SetNewProfitNumerator(_profitNumerator);
+        profitNumerator = newProfitNumerator;
+        emit SetNewProfitNumerator(newProfitNumerator);
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyAdmin {
-        _setPeer(_eid, _peer);
+    function setPeer(uint32 eid, bytes32 peer) public override onlyAdmin {
+        _setPeer(eid, peer);
     }
 
-    function setBtchPeers(uint32[] memory _eids, bytes32[] memory _peers) public onlyAdmin {
-        require(_eids.length == _peers.length, "eid amd peer length are not same");
-        for(uint256 i = 0; i < _eids.length; ++i) {
-            _setPeer(_eids[i], _peers[i]);
+    function setBatchPeers(uint32[] memory eids, bytes32[] memory bytes32Addresses) public onlyAdmin {
+        require(eids.length == bytes32Addresses.length, "eid and bytes32Addresses length are not same");
+        for(uint256 i = 0; i < eids.length; ++i) {
+            _setPeer(eids[i], bytes32Addresses[i]);
         }
     }
 
-    function setOptions(uint128 GAS_LIMIT, uint128 MSG_VALUE) public onlyAdmin {
-        bytes memory new_options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(GAS_LIMIT, MSG_VALUE);
-        _options = new_options;
+    function setOptions(uint128 gasLimit, uint128 msgValue) public onlyAdmin {
+        bytes memory newOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(gasLimit, msgValue);
+        gasOptions = newOptions;
     }
 }

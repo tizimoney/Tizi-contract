@@ -15,25 +15,14 @@ import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
 contract STTDAdapter is OFTAdapter {
     using OptionsBuilder for bytes;
 
-    bytes public _options;
-    IAuthorityControl private authorityControl;
+    bytes public gasOptions;
+    IAuthorityControl private _authorityControl;
 
     /*    ------------- Modifiers ------------    */
-    modifier onlyManager() {
-        require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
-                msg.sender
-            ),
-            "Not authorized"
-        );
-        _;
-    }
-
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -48,22 +37,22 @@ contract STTDAdapter is OFTAdapter {
         address _lzEndpoint,
         address _owner
     ) OFTAdapter(_token, _lzEndpoint, _owner) Ownable(_owner) {
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyAdmin {
-        _setPeer(_eid, _peer);
+    function setPeer(uint32 eid, bytes32 peer) public override onlyAdmin {
+        _setPeer(eid, peer);
     }
 
-    function setBtchPeers(uint32[] memory _eids, bytes32[] memory _peers) public onlyAdmin {
-        require(_eids.length == _peers.length, "eid amd peer length are not same");
-        for(uint256 i = 0; i < _eids.length; ++i) {
-            _setPeer(_eids[i], _peers[i]);
+    function setBatchPeers(uint32[] memory eids, bytes32[] memory bytes32Addresses) public onlyAdmin {
+        require(eids.length == bytes32Addresses.length, "eid and bytes32Addresses length are not same");
+        for(uint256 i = 0; i < eids.length; ++i) {
+            _setPeer(eids[i], bytes32Addresses[i]);
         }
     }
 
-    function setOptions(uint128 GAS_LIMIT, uint128 MSG_VALUE) public onlyAdmin {
-        bytes memory new_options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(GAS_LIMIT, MSG_VALUE);
-        _options = new_options;
+    function setOptions(uint128 gasLimit, uint128 msgValue) public onlyAdmin {
+        bytes memory newOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(gasLimit, msgValue);
+        gasOptions = newOptions;
     }
 }

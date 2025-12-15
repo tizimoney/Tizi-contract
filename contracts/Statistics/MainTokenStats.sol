@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
-import {IERC20} from "../interfaces/IERC20.sol";
-import {IFarm} from "../interfaces/IFarm.sol";
-import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
+import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
+import { IERC20 } from "../interfaces/IERC20.sol";
+import { IFarm } from "../interfaces/IFarm.sol";
+import { IStrategyManager } from "../interfaces/IStrategyManager.sol";
 
 /**
  * @title Tizi MainTokenStats
@@ -18,15 +18,15 @@ import {IStrategyManager} from "../interfaces/IStrategyManager.sol";
  *  price on the final chain as the basis for rebase.
  */
 contract MainTokenStats {
-    IAuthorityControl private authorityControl;
-    IStrategyManager private strategyManager;
     IERC20 public immutable USDC;
-
     address public mainAxelar;
     address public mainLayerZero;
     address public vault;
     address public usdcAddr;
     uint256 public immutable CHAINID;
+
+    IAuthorityControl private _authorityControl;
+    IStrategyManager private _strategyManager;
 
     struct Strategy {
         uint256 chainID;
@@ -55,8 +55,8 @@ contract MainTokenStats {
         uint256 _chainID
     ) {
         USDC = IERC20(_USDC);
-        authorityControl = IAuthorityControl(_access);
-        strategyManager = IStrategyManager(_control);
+        _authorityControl = IAuthorityControl(_access);
+        _strategyManager = IStrategyManager(_control);
         usdcAddr = _USDC;
         CHAINID = _chainID;
     }
@@ -70,8 +70,8 @@ contract MainTokenStats {
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -175,8 +175,9 @@ contract MainTokenStats {
     function calculateTotalChainValues()
         public
         view
-        returns (uint256 totalValue)
+        returns (uint256)
     {
+        uint256 totalValue;
         for (uint256 i = 0; i < chainIDs.length; i++) {
             uint256 chainID = chainIDs[i];
             totalValue += chainTotalValues[chainID];
@@ -229,12 +230,11 @@ contract MainTokenStats {
     }
 
     /*    ---------- Write Functions ----------    */
-
     /// @notice Get the token information of each strategy on the current chain.
     function strategiesStats() public onlyAdmin {
         _clearDataByChainId(CHAINID);
         _addVaultInfo();
-        address[] memory activeAddresses = strategyManager
+        address[] memory activeAddresses = _strategyManager
             .getActiveAddrByChainId(CHAINID);
         for (uint256 i = 0; i < activeAddresses.length; i++) {
             address contractAddress = activeAddresses[i];
@@ -339,48 +339,48 @@ contract MainTokenStats {
         }
     }
 
-    function setAxelar(address _axelar) public onlyAdmin {
-        require(_axelar != address(0) && _axelar != mainAxelar, "Wrong address");
-        mainAxelar = _axelar;
-        emit SetAxelar(_axelar);
+    function setAxelar(address newAxelar) public onlyAdmin {
+        require(newAxelar != address(0) && newAxelar != mainAxelar, "Wrong address");
+        mainAxelar = newAxelar;
+        emit SetAxelar(newAxelar);
     }
 
-    function setLayerZero(address _layerzero) public onlyAdmin {
-        require(_layerzero != address(0) && _layerzero != mainLayerZero, "Wrong address");
-        mainLayerZero = _layerzero;
-        emit SetLayerZero(_layerzero);
+    function setLayerZero(address newLayerzero) public onlyAdmin {
+        require(newLayerzero != address(0) && newLayerzero != mainLayerZero, "Wrong address");
+        mainLayerZero = newLayerzero;
+        emit SetLayerZero(newLayerzero);
     }
 
-    function setVault(address _vault) public onlyAdmin {
-        require(_vault != address(0) && _vault != vault, "Wrong address");
-        vault = _vault;
-        emit SetVault(_vault);
+    function setVault(address newVault) public onlyAdmin {
+        require(newVault != address(0) && newVault != vault, "Wrong address");
+        vault = newVault;
+        emit SetVault(newVault);
     }
 
-    function clearDataByChainId(uint256 _chainID) public onlyAxelarorLayerZero {
-        _clearDataByChainId(_chainID);
-        emit DeleteData(_chainID);
+    function clearDataByChainId(uint256 newChainID) public onlyAxelarorLayerZero {
+        _clearDataByChainId(newChainID);
+        emit DeleteData(newChainID);
     }
 
     /// @notice Clear statistics, called before each statistics. 
-    function _clearDataByChainId(uint256 _chainID) private {
-        address[] storage addresses = chainStrategyKeys[_chainID];
+    function _clearDataByChainId(uint256 chainID) private {
+        address[] storage addresses = chainStrategyKeys[chainID];
 
         for (uint256 j = 0; j < addresses.length; j++) {
             address contractAddress = addresses[j];
-            address[] storage tokens = tokenList[_chainID][contractAddress];
+            address[] storage tokens = tokenList[chainID][contractAddress];
 
             for (uint256 k = 0; k < tokens.length; k++) {
-                delete chainStrategies[_chainID][contractAddress][tokens[k]];
+                delete chainStrategies[chainID][contractAddress][tokens[k]];
             }
-            delete tokenList[_chainID][contractAddress];
-            delete strategyTotalValues[_chainID][contractAddress];
+            delete tokenList[chainID][contractAddress];
+            delete strategyTotalValues[chainID][contractAddress];
         }
-        delete chainStrategyKeys[_chainID];
-        delete chainTotalValues[_chainID];
+        delete chainStrategyKeys[chainID];
+        delete chainTotalValues[chainID];
 
         for (uint256 i = 0; i < chainIDs.length; i++) {
-            if (chainIDs[i] == _chainID) {
+            if (chainIDs[i] == chainID) {
                 chainIDs[i] = chainIDs[chainIDs.length - 1];
                 chainIDs.pop();
                 break;

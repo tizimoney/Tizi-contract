@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-import {IERC20} from "./IERC20.sol";
-
 pragma solidity ^0.8.20;
+
+import {IERC20} from "./IERC20.sol";
 
 interface ISharedStructs {
     struct SwapDescriptionV2 {
@@ -17,7 +17,7 @@ interface ISharedStructs {
         uint256 flags;
         bytes permit;
     }
-    
+
     struct SwapExecutionParams {
         address callTarget; // call this address
         address approveTarget; // approve this address if _APPROVE_FUND set
@@ -25,7 +25,7 @@ interface ISharedStructs {
         SwapDescriptionV2 desc;
         bytes clientData;
     }
-    
+
     struct ExchangeRequest {
         address from;
         uint256 amountIn;

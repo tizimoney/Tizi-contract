@@ -9,7 +9,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
  * @author tizi.money
  * @notice
  *  AuthorityControl is used for authority control, and there are three roles.
- *  Admin can change the parameters of the project, send messages, and 
+ *  Admin can change the parameters of the project, send messages, and
  *  cross-chain tokens.
  *  Manager is responsible for transferring and using funds.
  *  Strategist is responsible for making changes to certain external strategies.

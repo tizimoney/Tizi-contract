@@ -4,14 +4,14 @@ pragma solidity ^0.8.20;
 import { OApp, Origin, MessagingFee } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {IAuthorityControl} from "./interfaces/IAuthorityControl.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
 
 /**
  * @title Tizi StrategyManager
  * @author tizi.money
  * @notice
- *  StrategyManager is deployed on all chains to manage strategies. After
+ *  SubStrategyManager is deployed on other chains to manage strategies. After
  *  a strategy is added, its status needs to be set to active before deposits
  *  are allowed. There can be multiple active strategies on a chain, and
  *  the addition, activation and deletion of strategies are controlled
@@ -31,18 +31,18 @@ contract SubStrategyManager is OApp {
     }
 
     struct LiquidityInfo {
-        bool canActive;
+        bool canActivate;
         uint256 time;
     }
 
     mapping(uint256 => mapping(address => Strategy)) public strategies;
     mapping(uint256 => address[]) public activeStrategyAddresses;
-    StrategyInfo[] private strategyList;
-    uint256[] private chainIDs;
-    uint256 cooldownTime = 3 days;
+    uint256 public cooldownTime = 3 days;
     LiquidityInfo public liquidityInfo;
 
-    IAuthorityControl private authorityControl;
+    StrategyInfo[] private _strategyList;
+    uint256[] private _chainIDs;
+    IAuthorityControl private _authorityControl;
 
     /*    ------------ Constructor ------------    */
     constructor(
@@ -50,7 +50,7 @@ contract SubStrategyManager is OApp {
         address _owner,
         address _accessAddr
     ) OApp(_endpoint, _owner) Ownable(_owner) {
-        authorityControl = IAuthorityControl(_accessAddr);
+        _authorityControl = IAuthorityControl(_accessAddr);
     }
 
     /*    -------------- Events --------------    */
@@ -65,8 +65,8 @@ contract SubStrategyManager is OApp {
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
         require(
-            authorityControl.hasRole(
-                authorityControl.MANAGER_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.MANAGER_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -76,8 +76,8 @@ contract SubStrategyManager is OApp {
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -96,13 +96,13 @@ contract SubStrategyManager is OApp {
     }
 
     function getActiveAddrByChainId(
-        uint256 _chainId
+        uint256 chainID
     ) public view returns (address[] memory) {
-        return activeStrategyAddresses[_chainId];
+        return activeStrategyAddresses[chainID];
     }
 
-    function _isContract(address _account) internal view returns (bool) {
-        return _account.code.length > 0;
+    function _isContract(address account) internal view returns (bool) {
+        return account.code.length > 0;
     }
 
     function getAllActiveStrategies()
@@ -111,10 +111,10 @@ contract SubStrategyManager is OApp {
         returns (StrategyInfo[] memory)
     {
         uint256 activeCount = 0;
-        for (uint256 i = 0; i < strategyList.length; i++) {
+        for (uint256 i = 0; i < _strategyList.length; i++) {
             if (
-                strategies[strategyList[i].chainID][
-                    strategyList[i].strategyAddress
+                strategies[_strategyList[i].chainID][
+                    _strategyList[i].strategyAddress
                 ].active
             ) {
                 activeCount++;
@@ -125,13 +125,13 @@ contract SubStrategyManager is OApp {
             activeCount
         );
         uint256 index = 0;
-        for (uint256 i = 0; i < strategyList.length; i++) {
+        for (uint256 i = 0; i < _strategyList.length; i++) {
             if (
-                strategies[strategyList[i].chainID][
-                    strategyList[i].strategyAddress
+                strategies[_strategyList[i].chainID][
+                    _strategyList[i].strategyAddress
                 ].active
             ) {
-                activeStrategies[index] = strategyList[i];
+                activeStrategies[index] = _strategyList[i];
                 index++;
             }
         }
@@ -144,10 +144,10 @@ contract SubStrategyManager is OApp {
         returns (StrategyInfo[] memory)
     {
         uint256 inactiveCount = 0;
-        for (uint256 i = 0; i < strategyList.length; i++) {
+        for (uint256 i = 0; i < _strategyList.length; i++) {
             if (
-                !strategies[strategyList[i].chainID][
-                    strategyList[i].strategyAddress
+                !strategies[_strategyList[i].chainID][
+                    _strategyList[i].strategyAddress
                 ].active
             ) {
                 inactiveCount++;
@@ -158,13 +158,13 @@ contract SubStrategyManager is OApp {
             inactiveCount
         );
         uint256 index = 0;
-        for (uint256 i = 0; i < strategyList.length; i++) {
+        for (uint256 i = 0; i < _strategyList.length; i++) {
             if (
-                !strategies[strategyList[i].chainID][
-                    strategyList[i].strategyAddress
+                !strategies[_strategyList[i].chainID][
+                    _strategyList[i].strategyAddress
                 ].active
             ) {
-                inactiveStrategies[index] = strategyList[i];
+                inactiveStrategies[index] = _strategyList[i];
                 index++;
             }
         }
@@ -172,129 +172,128 @@ contract SubStrategyManager is OApp {
     }
 
     function isStrategyActive(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external view returns (bool) {
         require(
-            strategies[_chainID][_strategyAddress].exists,
+            strategies[chainID][strategyAddress].exists,
             "Strategy does not exist"
         );
-        return strategies[_chainID][_strategyAddress].active;
+        return strategies[chainID][strategyAddress].active;
     }
 
     function getAllChainIDs() external view returns (uint256[] memory) {
-        return chainIDs;
+        return _chainIDs;
     }
 
     function countChainIDs() external view returns (uint256) {
-        return chainIDs.length;
+        return _chainIDs.length;
     }
 
-    function addressToBytes32(address _addr) public pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
+    function addressToBytes32(address addr) public pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 
-    function bytes32ToAddress(bytes32 _b) public pure returns (address) {
-        return address(uint160(uint256(_b)));
+    function bytes32ToAddress(bytes32 bytes32Address) public pure returns (address) {
+        return address(uint160(uint256(bytes32Address)));
     }
 
     /*    ---------- Write Functions ----------    */
-
     /// @notice Used to add a new strategy.
-    /// @param _chainID The chain id of given chain.
-    /// @param _strategyAddress The address of new strategy.
+    /// @param chainID The chain id of given chain.
+    /// @param strategyAddress The address of new strategy.
     function addStrategy(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external onlyAdmin {
         require(
-            _isContract(_strategyAddress) == true,
+            _isContract(strategyAddress) == true,
             "The address must be a contract"
         );
         require(
-            !strategies[_chainID][_strategyAddress].exists,
+            !strategies[chainID][strategyAddress].exists,
             "Strategy exists"
         );
-        strategies[_chainID][_strategyAddress] = Strategy({
+        strategies[chainID][strategyAddress] = Strategy({
             exists: true,
             active: false,
             addedTime: block.timestamp
         });
-        strategyList.push(
-            StrategyInfo({chainID: _chainID, strategyAddress: _strategyAddress})
+        _strategyList.push(
+            StrategyInfo({chainID: chainID, strategyAddress: strategyAddress})
         );
         bool isNewChainID = true;
-        for (uint256 i = 0; i < chainIDs.length; i++) {
-            if (chainIDs[i] == _chainID) {
+        for (uint256 i = 0; i < _chainIDs.length; i++) {
+            if (_chainIDs[i] == chainID) {
                 isNewChainID = false;
                 break;
             }
         }
         if (isNewChainID) {
-            chainIDs.push(_chainID);
+            _chainIDs.push(chainID);
         }
 
-        emit AddStrategy(_chainID, _strategyAddress);
+        emit AddStrategy(chainID, strategyAddress);
     }
 
     /// @notice Used to activate a new strategy.
-    /// @param _chainID The chain id of given chain.
-    /// @param _strategyAddress The address of new strategy.
+    /// @param chainID The chain id of given chain.
+    /// @param strategyAddress The address of new strategy.
     function activateStrategy(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external onlyAdmin {
         require(
-            _isContract(_strategyAddress) == true,
+            _isContract(strategyAddress) == true,
             "The address must be a contract"
         );
         require(
-            strategies[_chainID][_strategyAddress].exists,
+            strategies[chainID][strategyAddress].exists,
             "Strategy does not exist"
         );
         require(
-            block.timestamp - strategies[_chainID][_strategyAddress].addedTime >= cooldownTime,
+            block.timestamp - strategies[chainID][strategyAddress].addedTime >= cooldownTime,
             "Adding time is less than the cooldown time."
         );
 
         require(block.timestamp - liquidityInfo.time <= 7200, "Liquidity information over 120 minutes!");
-        require(liquidityInfo.canActive, "No liquidity to active strategy!");
+        require(liquidityInfo.canActivate, "No liquidity to active strategy!");
 
-        strategies[_chainID][_strategyAddress].active = true;
-        activeStrategyAddresses[_chainID].push(_strategyAddress);
-        emit ActivateStrategy(_chainID, _strategyAddress);
+        strategies[chainID][strategyAddress].active = true;
+        activeStrategyAddresses[chainID].push(strategyAddress);
+        emit ActivateStrategy(chainID, strategyAddress);
     }
 
     /// @notice Used to remove a exist strategy.
-    /// @param _chainID The chain id of given chain.
-    /// @param _strategyAddress The address of strategy.
+    /// @param chainID The chain id of given chain.
+    /// @param strategyAddress The address of strategy.
     function removeStrategy(
-        uint256 _chainID,
-        address _strategyAddress
+        uint256 chainID,
+        address strategyAddress
     ) external onlyAdmin {
         require(
-            _isContract(_strategyAddress) == true,
+            _isContract(strategyAddress) == true,
             "The address must be a contract"
         );
         require(
-            strategies[_chainID][_strategyAddress].exists,
+            strategies[chainID][strategyAddress].exists,
             "Strategy does not exist"
         );
-        delete strategies[_chainID][_strategyAddress];
-        for (uint256 i = 0; i < strategyList.length; i++) {
+        delete strategies[chainID][strategyAddress];
+        for (uint256 i = 0; i < _strategyList.length; i++) {
             if (
-                strategyList[i].chainID == _chainID &&
-                strategyList[i].strategyAddress == _strategyAddress
+                _strategyList[i].chainID == chainID &&
+                _strategyList[i].strategyAddress == strategyAddress
             ) {
-                strategyList[i] = strategyList[strategyList.length - 1];
-                strategyList.pop();
+                _strategyList[i] = _strategyList[_strategyList.length - 1];
+                _strategyList.pop();
                 break;
             }
         }
 
-        address[] storage activeAddresses = activeStrategyAddresses[_chainID];
+        address[] storage activeAddresses = activeStrategyAddresses[chainID];
         for (uint256 i = 0; i < activeAddresses.length; i++) {
-            if (activeAddresses[i] == _strategyAddress) {
+            if (activeAddresses[i] == strategyAddress) {
                 activeAddresses[i] = activeAddresses[
                     activeAddresses.length - 1
                 ];
@@ -302,16 +301,16 @@ contract SubStrategyManager is OApp {
                 break;
             }
         }
-        emit RemoveStrategy(_chainID, _strategyAddress);
+        emit RemoveStrategy(chainID, strategyAddress);
     }
 
-    function setCooldownTime(uint256 _cooldownTime) public onlyAdmin {
-        require(_cooldownTime != 0 && _cooldownTime != cooldownTime, "Wrong cooldown time!");
-        cooldownTime = _cooldownTime;
+    function setCooldownTime(uint256 newCooldownTime) public onlyAdmin {
+        require(newCooldownTime != 0 && newCooldownTime != cooldownTime, "Wrong cooldown time!");
+        cooldownTime = newCooldownTime;
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyAdmin {
-        _setPeer(_eid, _peer);
+    function setPeer(uint32 eid, bytes32 peer) public override onlyAdmin {
+        _setPeer(eid, peer);
     }
 
     function _lzReceive(
@@ -329,14 +328,14 @@ contract SubStrategyManager is OApp {
         bytes32 ethMessage = toEthSignedMessageHash(hashMessage);
         address signer = ethMessage.recover(signedMessage);
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 signer
             ),
             "Not authorized"
         );
-        (bool canActive, uint256 time) = abi.decode(message, (bool, uint256));
-        liquidityInfo.canActive = canActive;
+        (bool canActivate, uint256 time) = abi.decode(message, (bool, uint256));
+        liquidityInfo.canActivate = canActivate;
         liquidityInfo.time = time;
         emit SignedMessageVerified(signer, hashMessage);
     }

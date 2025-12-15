@@ -4,9 +4,9 @@ pragma solidity ^0.8.20;
 import { OApp, Origin, MessagingFee } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
-import {ITokenStats} from "../interfaces/ITokenStats.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
+import { ITokenStats } from "../interfaces/ITokenStats.sol";
 
 /**
  * @title Tizi MainTokenLayerZero
@@ -19,10 +19,10 @@ import {ITokenStats} from "../interfaces/ITokenStats.sol";
 contract MainTokenLayerZero is OApp {
     using ECDSA for bytes32;
 
-    IAuthorityControl private authorityControl;
     ITokenStats public immutable tokenStats;
-
     bytes public tokenInfoData;
+
+    IAuthorityControl private _authorityControl;
 
     /*    ------------ Constructor ------------    */
     constructor(
@@ -32,13 +32,13 @@ contract MainTokenLayerZero is OApp {
         address _access
     )  OApp(_endpoint, _owner) Ownable(_owner) {
         tokenStats = ITokenStats(_tokenStats);
-        authorityControl = IAuthorityControl(_access);
+        _authorityControl = IAuthorityControl(_access);
     }
 
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -63,21 +63,21 @@ contract MainTokenLayerZero is OApp {
     }
 
     /*    ---------- Write Functions ----------    */
-    function addressToBytes32(address _addr) public pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
+    function addressToBytes32(address addr) public pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 
-    function bytes32ToAddress(bytes32 _b) public pure returns (address) {
-        return address(uint160(uint256(_b)));
+    function bytes32ToAddress(bytes32 bytes32Address) public pure returns (address) {
+        return address(uint160(uint256(bytes32Address)));
     }
 
-    function setPeer(uint32 _eid, bytes32 _peer) public override onlyAdmin {
-        _setPeer(_eid, _peer);
+    function setPeer(uint32 eid, bytes32 peer) public override onlyAdmin {
+        _setPeer(eid, peer);
     }
 
     function _lzReceive(
-        Origin calldata _origin,
-        bytes32 _guid,
+        Origin calldata,
+        bytes32,
         bytes calldata payload,
         address,  // Executor address as specified by the OApp.
         bytes calldata  // Any extra data or options to trigger on receipt.
@@ -91,8 +91,8 @@ contract MainTokenLayerZero is OApp {
         bytes32 ethMessage = toEthSignedMessageHash(hashMessage);
         address signer = ethMessage.recover(signedMessage);
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 signer
             ),
             "Not authorized"
@@ -102,8 +102,8 @@ contract MainTokenLayerZero is OApp {
             (ITokenStats.Strategy[])
         );
         require(tokenInfo.length > 0, "TokenInfo array is empty");
-        uint256 subCahinId = tokenInfo[0].chainID;
-        tokenStats.clearDataByChainId(subCahinId);
+        uint256 subChainId = tokenInfo[0].chainID;
+        tokenStats.clearDataByChainId(subChainId);
         tokenStats.updateFromStructs(tokenInfo);
         tokenStats.calculateAndStoreValues();
         emit SignedMessageVerified(signer, hashMessage);
@@ -119,8 +119,8 @@ contract MainTokenLayerZero is OApp {
         bytes32 ethMessage = toEthSignedMessageHash(hashMessage);
         address signer = ethMessage.recover(signedMessage);
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 signer
             ),
             "Not authorized"
@@ -130,8 +130,8 @@ contract MainTokenLayerZero is OApp {
             (ITokenStats.Strategy[])
         );
         require(tokenInfo.length > 0, "TokenInfo array is empty");
-        uint256 subCahinId = tokenInfo[0].chainID;
-        tokenStats.clearDataByChainId(subCahinId);
+        uint256 subChainId = tokenInfo[0].chainID;
+        tokenStats.clearDataByChainId(subChainId);
         tokenStats.updateFromStructs(tokenInfo);
         tokenStats.calculateAndStoreValues();
         emit SignedMessageVerified(signer, hashMessage);

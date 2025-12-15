@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
-import {IAuthorityControl} from "../interfaces/IAuthorityControl.sol";
-import {IHelper} from "../interfaces/IHelper.sol";
+import { ERC721Enumerable } from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
+import { IAuthorityControl } from "../interfaces/IAuthorityControl.sol";
+import { IHelper } from "../interfaces/IHelper.sol";
 
 /**
  * @title Tizi TUWT
@@ -20,13 +20,14 @@ import {IHelper} from "../interfaces/IHelper.sol";
  */
 contract TUWT is ERC721Enumerable {
     using Strings for uint256;
-    uint256 private _nextTokenId;
     address public helper;
-    IAuthorityControl private immutable authorityControl;
+
+    uint256 private _nextTokenId;
+    IAuthorityControl private _authorityControl;
 
     /*    ------------ Constructor ------------    */
     constructor(address _access) ERC721("Tizi User Withdraw Token", "TUWT") {
-        authorityControl = IAuthorityControl(_access);
+        _authorityControl = IAuthorityControl(_access);
     }
 
     /*    -------------- Events --------------    */
@@ -35,8 +36,8 @@ contract TUWT is ERC721Enumerable {
     /*    ------------- Modifiers ------------    */
     modifier onlyAdmin() {
         require(
-            authorityControl.hasRole(
-                authorityControl.DEFAULT_ADMIN_ROLE(),
+            _authorityControl.hasRole(
+                _authorityControl.DEFAULT_ADMIN_ROLE(),
                 msg.sender
             ),
             "Not authorized"
@@ -93,31 +94,33 @@ contract TUWT is ERC721Enumerable {
             temp /= 10;
         }
         bytes memory buffer = new bytes(digits);
-        while (value != 0) {
+        uint256 v = value;
+        while (v != 0) {
             digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
+            buffer[digits] = bytes1(uint8(48 + uint256(v % 10)));
+            v /= 10;
         }
         return string(buffer);
     }
 
     /*    ---------- Write Functions ----------    */
-    function mint(address _to) external returns (uint256 tokenId) {
+    function mint(address to) external returns (uint256) {
         require(msg.sender == helper, "Not authorized");
-        tokenId = _nextTokenId;
+        uint256 tokenId = _nextTokenId;
         _nextTokenId++;
-        _safeMint(_to, tokenId);
+        _safeMint(to, tokenId);
+        return tokenId;
     }
 
-    function burn(uint256 _tokenId) external returns (bool) {
+    function burn(uint256 tokenId) external returns (bool) {
         require(msg.sender == helper, "Not authorized");
-        _burn(_tokenId);
+        _burn(tokenId);
         return true;
     }
 
-    function setHelper(address _helper) external onlyAdmin {
-        require(_helper != helper && _helper != address(0), "Wrong address");
-        helper = _helper;
-        emit SetHelper(_helper);
+    function setHelper(address newHelper) external onlyAdmin {
+        require(newHelper != helper && newHelper != address(0), "Wrong address");
+        helper = newHelper;
+        emit SetHelper(newHelper);
     }
 }
