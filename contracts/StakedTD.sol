@@ -10,7 +10,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IAuthorityControl } from "./interfaces/IAuthorityControl.sol";
 import { ITD } from "./interfaces/ITD.sol";
-import "./utils/SafeMath.sol";
 
 interface IStakingVault {
     function sendToUser(
@@ -30,7 +29,6 @@ interface IStakingVault {
  */
 contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, ERC4626Upgradeable {
     using SafeERC20 for IERC20;
-    using SafeMath for uint256;
     using Math for uint256;
 
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
@@ -156,7 +154,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
     /*    ---------- Read Functions -----------    */
     function totalAssets() public view override returns (uint256) {
         uint256 unreleasedAmount = getUnreleasedAmount();
-        return stakedTDAmount >= unreleasedAmount ? stakedTDAmount.sub(unreleasedAmount) : 0;
+        return stakedTDAmount >= unreleasedAmount ? stakedTDAmount - unreleasedAmount : 0;
     }
 
     /**
@@ -209,12 +207,12 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
             return 0;
         }
 
-        uint256 timeGap = block.timestamp.sub(lastYieldTime);
+        uint256 timeGap = block.timestamp - lastYieldTime;
         // If all vested
         if (timeGap >= releasePeriod) {
             return 0;
         } else {
-            uint256 unreleasedAmount = ((releasePeriod.sub(timeGap)).mul(releaseAmount)).div(releasePeriod);
+            uint256 unreleasedAmount = ((releasePeriod - timeGap) * releaseAmount) / releasePeriod;
             return unreleasedAmount; 
         }
     }
@@ -223,7 +221,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
     /// @param amount New release amount.
     function _updateReleaseAmount(uint256 amount) internal {
         uint256 unreleasedAmount = getUnreleasedAmount();
-        releaseAmount = unreleasedAmount.add(amount); 
+        releaseAmount = unreleasedAmount + amount; 
         lastYieldTime = block.timestamp; 
     }
 
@@ -231,7 +229,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
     /// @param amount New release amount.
     function _updateNegativeReleaseAmount(uint256 amount) internal {
         uint256 unreleasedAmount = getUnreleasedAmount();
-        releaseAmount = unreleasedAmount.sub(amount); 
+        releaseAmount = unreleasedAmount - amount; 
         lastYieldTime = block.timestamp; 
     }
 
@@ -247,9 +245,9 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
 
         uint256 profit;
         if(!negativeGrowth) {
-            profit = amount.mul(profitNumerator).div(profitDenominator);
+            profit = amount * profitNumerator / profitDenominator;
             totalProfit += profit;
-            stakedTDAmount = stakedTDAmount.add(amount - profit);
+            stakedTDAmount = stakedTDAmount + (amount - profit);
             _updateReleaseAmount(amount - profit);
             ITD(asset()).mintForYield(amount - profit);
             ITD(asset()).mintForProfitRecipient(profitRecipient, profit);
@@ -265,24 +263,24 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
                 
                 if(toBurnFromUnreleased > 0) {
                     _updateNegativeReleaseAmount(toBurnFromUnreleased);
-                    stakedTDAmount = stakedTDAmount.sub(toBurnFromUnreleased);
-                    remainingAmount = remainingAmount.sub(toBurnFromUnreleased);
+                    stakedTDAmount = stakedTDAmount - toBurnFromUnreleased;
+                    remainingAmount = remainingAmount - toBurnFromUnreleased;
                     ITD(asset()).burnForYield(toBurnFromUnreleased);
                 }
             }
 
             // step2: check released amount
             if(remainingAmount > 0) {
-                uint256 availableAssets = stakedTDAmount.sub(getUnreleasedAmount());
+                uint256 availableAssets = stakedTDAmount - getUnreleasedAmount();
                 uint256 toBurnFromAssets = Math.min(availableAssets, remainingAmount);
                 if(toBurnFromAssets > 0) {
-                    stakedTDAmount = stakedTDAmount.sub(toBurnFromAssets);
-                    remainingAmount = remainingAmount.sub(toBurnFromAssets);
+                    stakedTDAmount = stakedTDAmount - toBurnFromAssets;
+                    remainingAmount = remainingAmount - toBurnFromAssets;
                     ITD(asset()).burnForYield(toBurnFromAssets);
                 }
             }
             
-            emit YieldReceived(amount.sub(remainingAmount), true);
+            emit YieldReceived(amount - remainingAmount, true);
         }
     }
 
@@ -325,7 +323,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         require(unstakingPeriod > 0, "ERC4626_MODE_OFF");
 
         uint256 shares = super.deposit(assets, msg.sender);
-        totalShares = totalShares.add(shares);
+        totalShares = totalShares + shares;
         emit Stake(assets, shares, msg.sender);
     }
 
@@ -375,7 +373,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         }
 
         _withdraw(msg.sender, stakingVault, msg.sender, assets, shares);
-        totalShares = totalShares.sub(shares);
+        totalShares = totalShares - shares;
         emit UnStake(shares, assets, msg.sender);  
         return assets;  
     }
@@ -389,7 +387,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         require(shares > 0, "SHARES_IS_ZERO");
 
         super._deposit(caller, receiver, assets, shares);
-        stakedTDAmount = stakedTDAmount.add(assets);
+        stakedTDAmount = stakedTDAmount + assets;
     }
 
     function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
@@ -400,7 +398,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         require(assets > 0, "ASSETS_IS_ZERO");
         require(shares > 0, "SHARES_IS_ZERO");
 
-        stakedTDAmount = stakedTDAmount.sub(assets);
+        stakedTDAmount = stakedTDAmount - assets;
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
@@ -408,7 +406,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         require(token != address(this), "Can't rescue stTD");
         // If is TD, check pooled amount first.
         if (token == asset()) {
-            require(amount <= IERC20(token).balanceOf(address(this)).sub(stakedTDAmount), "TD rescue amount too large");
+            require(amount <= IERC20(token).balanceOf(address(this)) - stakedTDAmount, "TD rescue amount too large");
         }
         IERC20(token).safeTransfer(to, amount);
     }
@@ -442,6 +440,8 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
+
+        require(newReleasePeriod <= 60 days, "ReleasePeriod should be less than 60days!");
 
         uint256 unreleasedAmount = getUnreleasedAmount();
         releasePeriod = newReleasePeriod;
