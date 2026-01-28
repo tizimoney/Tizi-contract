@@ -76,6 +76,7 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
     event UnStake(uint256 indexed _shares, uint256 indexed _assets, address indexed sender);
     event Claim(uint256 indexed amountToClaim, address indexed sender);
     error UnsupportedChain(uint256 chainID);
+    error MaxUnstakeQueue(address user);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
@@ -364,12 +365,17 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         uint256 assets = previewRedeem(shares);
 
         UserUnstakingInfo[7] storage userUnstakingInfo = userUnstakingQueue[msg.sender];
+        bool found = false;
         for(uint256 i = 0; i < userUnstakingInfo.length; ++i) {
             if(userUnstakingInfo[i].amount == 0 && userUnstakingInfo[i].endTime == 0) {
                 userUnstakingInfo[i].endTime = block.timestamp + unstakingPeriod;
                 userUnstakingInfo[i].amount += assets;
+                found = true;
                 break;
             }
+        }
+        if (!found) {
+            revert MaxUnstakeQueue(msg.sender);
         }
 
         _withdraw(msg.sender, stakingVault, msg.sender, assets, shares);
@@ -465,7 +471,8 @@ contract StakedTD is Initializable, AccessControlUpgradeable, UUPSUpgradeable, R
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
-        require(newProfitNumerator != profitNumerator, "Wrong profitNumerator");
+        require(newProfitNumerator != profitNumerator && newProfitNumerator <= 100, 
+            "Wrong profitNumerator");
 
         profitNumerator = newProfitNumerator;
         emit SetNewProfitNumerator(newProfitNumerator);

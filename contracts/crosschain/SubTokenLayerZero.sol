@@ -86,9 +86,10 @@ contract SubTokenLayerZero is OApp {
     function quote(
         uint32 dstEid,
         string memory signedMessage,
+        bytes calldata message,
         bool payInLzToken
     ) public view returns (MessagingFee memory) {
-        bytes memory messageBytes = abi.encode(signedMessage, tokenCode);
+        bytes memory messageBytes = abi.encode(signedMessage, message);
         bytes memory payload = messageBytes;
         MessagingFee memory fee = _quote(dstEid, payload, gasOptions, payInLzToken);
         return fee;
@@ -96,9 +97,10 @@ contract SubTokenLayerZero is OApp {
 
     function send(
         uint32 dstEid,
-        bytes calldata signedMessage
+        bytes calldata signedMessage,
+        bytes calldata message
     ) external payable onlyAdmin {
-        bytes memory messageBytes = abi.encode(signedMessage, tokenCode);
+        bytes memory messageBytes = abi.encode(signedMessage, message);
         bytes memory payload = messageBytes;
 
         _lzSend(

@@ -43,7 +43,7 @@ contract MainTokenStats {
     mapping(uint256 => address[]) public chainStrategyKeys;
     uint256[] public chainIDs;
     /// (chainid => (strategyAddress => totalValue))
-    mapping(uint256 => mapping(address => uint256)) public strategyTotalValues;
+    mapping(uint256 => mapping(address => int256)) public strategyTotalValues;
     /// (chainid => totalValue)
     mapping(uint256 => uint256) public chainTotalValues;
 
@@ -202,8 +202,8 @@ contract MainTokenStats {
     function getStrategyTotalValues(
         uint256 chainID,
         address strategyAddress
-    ) public view returns (uint256) {
-        uint256 totalValue = strategyTotalValues[chainID][strategyAddress];
+    ) public view returns (int256) {
+        int256 totalValue = strategyTotalValues[chainID][strategyAddress];
         return totalValue;
     }
 
@@ -330,10 +330,18 @@ contract MainTokenStats {
                         totalStrategyValue += int256(tokenAmount * tokenValue);
                     }
                 }
-                strategyTotalValues[chainID][strategyAddress] =
-                    uint256(totalStrategyValue) /
+
+                if(totalStrategyValue > 0) {
+                    strategyTotalValues[chainID][strategyAddress] =
+                    totalStrategyValue /
                     10 ** 18;
-                totalChainValue += uint256(totalStrategyValue) / 10 ** 18;
+                    totalChainValue += uint256(totalStrategyValue) / 10 ** 18;
+                } else {
+                    strategyTotalValues[chainID][strategyAddress] =
+                    totalStrategyValue /
+                    10 ** 18;
+                    totalChainValue -= uint256(-totalStrategyValue) / 10 ** 18;
+                }
             }
             chainTotalValues[chainID] = totalChainValue;
         }

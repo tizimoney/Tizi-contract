@@ -57,9 +57,9 @@ contract StrategyManager is OApp {
     }
 
     /*    -------------- Events --------------    */
-    event AddStrategy(uint256 chainID, address strategy);
-    event ActivateStrategy(uint256 chainID, address strategy);
-    event RemoveStrategy(uint256 chainID, address strategy);
+    event AddStrategy(uint256 indexed chainID, address indexed strategy);
+    event ActivateStrategy(uint256 indexed chainID, address indexed strategy);
+    event RemoveStrategy(uint256 indexed chainID, address indexed strategy);
     event MessageSent(bytes payload , uint32 dstEid);
 
     /*    ------------- Modifiers ------------    */
@@ -195,10 +195,11 @@ contract StrategyManager is OApp {
 
     function quote(
         uint32 dstEid,
-        string memory signedMessage,
+        bytes calldata signedMessage,
+        bytes calldata message,
         bool payInLzToken
     ) public view returns (MessagingFee memory) {
-        bytes memory messageBytes = abi.encode(signedMessage, liquidityInfo);
+        bytes memory messageBytes = abi.encode(signedMessage, message);
         bytes memory payload = messageBytes;
         MessagingFee memory fee = _quote(dstEid, payload, gasOptions, payInLzToken);
         return fee;
@@ -267,6 +268,10 @@ contract StrategyManager is OApp {
             block.timestamp - strategies[chainID][strategyAddress].addedTime >= cooldownTime,
             "Adding time is less than the cooldown time."
         );
+        require(
+           strategies[chainID][strategyAddress].active == false,
+            "The strategy has been activated."
+        );
 
         (, bool canActivate) = IDepositHelper(depositHelper).calculateLiquidity();
         require(canActivate, "No liquidity to active strategy!");
@@ -318,9 +323,10 @@ contract StrategyManager is OApp {
 
     function send(
         uint32 dstEid,
-        bytes calldata signedMessage
+        bytes calldata signedMessage,
+        bytes calldata message
     ) external payable onlyAdmin {
-        bytes memory messageBytes = abi.encode(signedMessage, liquidityInfo);
+        bytes memory messageBytes = abi.encode(signedMessage, message);
         bytes memory payload = messageBytes;
 
         _lzSend(

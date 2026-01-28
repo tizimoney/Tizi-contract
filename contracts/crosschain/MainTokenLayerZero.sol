@@ -24,6 +24,8 @@ contract MainTokenLayerZero is OApp {
 
     IAuthorityControl private _authorityControl;
 
+    mapping(uint256 => bool) public usedNonce;
+
     /*    ------------ Constructor ------------    */
     constructor(
         address _endpoint,
@@ -97,8 +99,24 @@ contract MainTokenLayerZero is OApp {
             ),
             "Not authorized"
         );
-        ITokenStats.Strategy[] memory tokenInfo = abi.decode(
+
+        (
+            address targetContract,
+            uint256 nonce,
+            uint256 deadline,
+            bytes memory code
+        ) = abi.decode(
             message,
+            (address, uint256, uint256, bytes)
+        );
+
+        require(targetContract == address(this), "Wrong target");
+        require(block.timestamp <= deadline, "Signature expired");
+        require(!usedNonce[nonce], "Nonce used");
+        usedNonce[nonce] = true;
+
+        ITokenStats.Strategy[] memory tokenInfo = abi.decode(
+            code,
             (ITokenStats.Strategy[])
         );
         require(tokenInfo.length > 0, "TokenInfo array is empty");

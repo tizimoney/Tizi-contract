@@ -37,6 +37,7 @@ contract SubStrategyManager is OApp {
 
     mapping(uint256 => mapping(address => Strategy)) public strategies;
     mapping(uint256 => address[]) public activeStrategyAddresses;
+    mapping(uint256 => bool) public usedNonce;
     uint256 public cooldownTime = 3 days;
     LiquidityInfo public liquidityInfo;
 
@@ -54,9 +55,9 @@ contract SubStrategyManager is OApp {
     }
 
     /*    -------------- Events --------------    */
-    event AddStrategy(uint256 chainID, address strategy);
-    event ActivateStrategy(uint256 chainID, address strategy);
-    event RemoveStrategy(uint256 chainID, address strategy);
+    event AddStrategy(uint256 indexed chainID, address indexed strategy);
+    event ActivateStrategy(uint256 indexed chainID, address indexed strategy);
+    event RemoveStrategy(uint256 indexed chainID, address indexed strategy);
     event SignedMessageVerified(
         address indexed signer,
         bytes32 indexed messageHash
@@ -255,6 +256,10 @@ contract SubStrategyManager is OApp {
             block.timestamp - strategies[chainID][strategyAddress].addedTime >= cooldownTime,
             "Adding time is less than the cooldown time."
         );
+        require(
+           strategies[chainID][strategyAddress].active == false,
+            "The strategy has been activated."
+        );
 
         require(block.timestamp - liquidityInfo.time <= 7200, "Liquidity information over 120 minutes!");
         require(liquidityInfo.canActivate, "No liquidity to active strategy!");
@@ -334,7 +339,23 @@ contract SubStrategyManager is OApp {
             ),
             "Not authorized"
         );
-        (bool canActivate, uint256 time) = abi.decode(message, (bool, uint256));
+
+        (
+            address targetContract,
+            uint256 nonce,
+            uint256 deadline,
+            bytes memory code
+        ) = abi.decode(
+            message,
+            (address, uint256, uint256, bytes)
+        );
+
+        require(targetContract == address(this), "Wrong target");
+        require(block.timestamp <= deadline, "Signature expired");
+        require(!usedNonce[nonce], "Nonce used");
+        usedNonce[nonce] = true;
+
+        (bool canActivate, uint256 time) = abi.decode(code, (bool, uint256));
         liquidityInfo.canActivate = canActivate;
         liquidityInfo.time = time;
         emit SignedMessageVerified(signer, hashMessage);

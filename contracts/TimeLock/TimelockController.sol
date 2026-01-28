@@ -13,6 +13,10 @@ interface IStrategyManager {
     function calculateLiquidity() external view returns (uint256 liquidity, bool canActive);
 }
 
+interface IStakedTD {
+    function unstakingPeriod() external view returns (uint24);
+}
+
 /**
  * @dev Contract module which acts as a timelocked controller. When set as the
  * owner of an `Ownable` smart contract, it enforces a timelock on all
@@ -32,6 +36,7 @@ contract TimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     mapping(bytes32 id => uint256) private _timestamps;
     uint256 private _minDelay;
     address public strategyManager;
+    address public stakedTD;
     IAuthorityControl private _authorityControl;
 
     enum OperationState {
@@ -119,10 +124,12 @@ contract TimelockController is AccessControl, ERC721Holder, ERC1155Holder {
     constructor(
         uint256 minDelay, 
         address _strategyManager,
+        address _stakedTD,
         address _accessAddr
     ) {
         _minDelay = minDelay;
         strategyManager = _strategyManager;
+        stakedTD = _stakedTD;
         _authorityControl = IAuthorityControl(_accessAddr);
         emit MinDelayChange(0, minDelay);
     }
@@ -452,6 +459,9 @@ contract TimelockController is AccessControl, ERC721Holder, ERC1155Holder {
         if (sender != address(this)) {
             revert TimelockUnauthorizedCaller(sender);
         }
+
+        require(newDelay >= IStakedTD(stakedTD).unstakingPeriod() + 1 days, 
+            "Daley should larger than unstake period");
         emit MinDelayChange(_minDelay, newDelay);
         _minDelay = newDelay;
     }

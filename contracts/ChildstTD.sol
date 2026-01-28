@@ -74,6 +74,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     event UnStake(uint256 indexed _shares, uint256 indexed _assets, address indexed sender);
     event Claim(uint256 indexed amountToClaim, address indexed sender);
     error UnsupportedChain(uint256 chainID);
+    error MaxUnstakeQueue(address user);
 
     /*    ------------- Modifiers ------------    */
     modifier onlyManager() {
@@ -127,9 +128,9 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     }
 
     /**
-     * @dev ERC4626 and ERC20 define function with same name and parameter types.
+     * @notice ERC4626 and ERC20 define function with same name and parameter types.
      */
-    function decimals() public pure override(ERC4626, ERC20) returns (uint8) {
+    function decimals() public pure override(ERC20, ERC4626) returns (uint8) {
         return 18;
     }
 
@@ -150,7 +151,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     }
 
     /**
-     * @dev Internal conversion function (from assets to shares) with support for rounding direction.
+     * @notice Internal conversion function (from assets to shares) with support for rounding direction.
      */
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
         return
@@ -160,7 +161,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     }
 
     /**
-     * @dev Internal conversion function (from shares to assets) with support for rounding direction.
+     * @notice Internal conversion function (from shares to assets) with support for rounding direction.
      */
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view override returns (uint256) {
         return
@@ -169,6 +170,8 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
                 : shares.mulDiv(totalAssets(), totalShares, rounding);
     }
 
+    /// @notice Calculate unreleased TD amount.
+    /// @return UnreleasedAmount.
     function getUnreleasedAmount() public view returns (uint256) {
         if(releaseAmount == 0) {
             return 0;
@@ -184,17 +187,28 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         }
     }
 
+    /// @notice Set new release amount when positive growth.
+    /// @param amount New release amount.
     function _updateReleaseAmount(uint256 amount) internal {
         uint256 unreleasedAmount = getUnreleasedAmount();
         releaseAmount = unreleasedAmount + amount; 
         lastYieldTime = block.timestamp; 
     }
 
+    /// @notice Set new release amount when negative growth.
+    /// @param amount New release amount.
+    function _updateNegativeReleaseAmount(uint256 amount) internal {
+        uint256 unreleasedAmount = getUnreleasedAmount();
+        releaseAmount = unreleasedAmount - amount; 
+        lastYieldTime = block.timestamp; 
+    }
+
     /*    ---------- Write Functions ----------    */
-    /**
-     * @notice Add Yield(TD) to this contract.
-     * Emits a `YieldReceived` event.
-     */
+    /// @notice Called by the TD contract, mint or burn TD in the stake pool.
+    /// If it is a positive growth, it will be released linearly and the
+    /// release time will be reset. If it is a negative growth, the unreleased
+    /// amount will be reduced first, then the released amount will be reduced,
+    /// and the release time will be reset.
     function addYield(uint256 amount, bool negativeGrowth) external {
         require(msg.sender == address(td), "msg.sender must be TD contract");
         require(amount > 0, "Yield amount must > 0");
@@ -212,25 +226,27 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         } else {
             uint256 remainingAmount = amount;
 
-            // step1: check released amount
-            uint256 availableAssets = stakedTDAmount - getUnreleasedAmount();
-            uint256 toBurnFromAssets = Math.min(availableAssets, remainingAmount);
-            if(toBurnFromAssets > 0) {
-                stakedTDAmount = stakedTDAmount - toBurnFromAssets;
-                remainingAmount = remainingAmount - toBurnFromAssets;
-                ITD(asset()).burnForYield(toBurnFromAssets);
-            }
-
-            // step2: check unreleased amount
+            // step1: check unreleased amount
             if(remainingAmount > 0) {
                 uint256 unreleased = getUnreleasedAmount();
                 uint256 toBurnFromUnreleased = Math.min(unreleased, remainingAmount);
                 
                 if(toBurnFromUnreleased > 0) {
-                    releaseAmount = releaseAmount - toBurnFromUnreleased;
+                    _updateNegativeReleaseAmount(toBurnFromUnreleased);
                     stakedTDAmount = stakedTDAmount - toBurnFromUnreleased;
                     remainingAmount = remainingAmount - toBurnFromUnreleased;
                     ITD(asset()).burnForYield(toBurnFromUnreleased);
+                }
+            }
+
+            // step2: check released amount
+            if(remainingAmount > 0) {
+                uint256 availableAssets = stakedTDAmount - getUnreleasedAmount();
+                uint256 toBurnFromAssets = Math.min(availableAssets, remainingAmount);
+                if(toBurnFromAssets > 0) {
+                    stakedTDAmount = stakedTDAmount - toBurnFromAssets;
+                    remainingAmount = remainingAmount - toBurnFromAssets;
+                    ITD(asset()).burnForYield(toBurnFromAssets);
                 }
             }
             
@@ -254,26 +270,20 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         return super.mint(shares, receiver);
     }
 
-    /**
-     * @dev Add mode check to {IERC4626-withdraw}.
-     */
-    function withdraw(uint256 assets, address receiver, address user) public virtual override returns (uint256) {
+    function withdraw(uint256 assets, address receiver, address owner) public virtual override returns (uint256) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
         require(unstakingPeriod == 0, "ERC4626_MODE_ON");
-        return super.withdraw(assets, receiver, user);
+        return super.withdraw(assets, receiver, owner);
     }
 
-    /**
-     * @dev Add mode check to {IERC4626-redeem}.
-     */
-    function redeem(uint256 shares, address receiver, address user) public virtual override returns (uint256) {
+    function redeem(uint256 shares, address receiver, address owner) public virtual override returns (uint256) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
         require(unstakingPeriod == 0, "ERC4626_MODE_ON");
-        return super.redeem(shares, receiver, user);
+        return super.redeem(shares, receiver, owner);
     }
 
     function stake(uint256 assets) external {
@@ -287,10 +297,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         emit Stake(assets, shares, msg.sender);
     }
 
-    /**
-     * @notice Used to claim USDz after CD has finished.
-     * @dev Works on both mode.
-     */
+    /// @notice Used to claim TD after CD has finished.
     function claim() external {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
@@ -314,7 +321,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
     /**
      * @notice Starts withdraw CD with shares.
      */
-    function unstake(uint256 shares) external returns (uint256 assets) {
+    function unstake(uint256 shares) external returns (uint256) {
         if (block.chainid != mainChainId) {
             revert UnsupportedChain(block.chainid);
         }
@@ -324,15 +331,20 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
             revert ERC4626ExceededMaxRedeem(msg.sender, shares, maxShares);
         }
 
-        assets = previewRedeem(shares);
+        uint256 assets = previewRedeem(shares);
 
         UserUnstakingInfo[7] storage userUnstakingInfo = userUnstakingQueue[msg.sender];
+        bool found = false;
         for(uint256 i = 0; i < userUnstakingInfo.length; ++i) {
             if(userUnstakingInfo[i].amount == 0 && userUnstakingInfo[i].endTime == 0) {
                 userUnstakingInfo[i].endTime = block.timestamp + unstakingPeriod;
                 userUnstakingInfo[i].amount += assets;
+                found = true;
                 break;
             }
+        }
+        if (!found) {
+            revert MaxUnstakeQueue(msg.sender);
         }
 
         _withdraw(msg.sender, stakingVault, msg.sender, assets, shares);
@@ -341,9 +353,6 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         return assets;  
     }
 
-    /**
-     * @dev Add nonReetrant and pooledUSDz calculation.
-     */
     function _deposit(address caller, address receiver, uint256 assets, uint256 shares)
         internal
         override
@@ -356,7 +365,7 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         stakedTDAmount = stakedTDAmount + assets;
     }
 
-    function _withdraw(address caller, address receiver, address user, uint256 assets, uint256 shares)
+    function _withdraw(address caller, address receiver, address owner, uint256 assets, uint256 shares)
         internal
         override
         nonReentrant
@@ -365,19 +374,22 @@ contract ChildstTD is ReentrancyGuard, ERC20Permit, ERC4626, OFT {
         require(shares > 0, "SHARES_IS_ZERO");
 
         stakedTDAmount = stakedTDAmount - assets;
-        super._withdraw(caller, receiver, user, assets, shares);
+        super._withdraw(caller, receiver, owner, assets, shares);
     }
 
-    function rescueERC20(address tokenAddress, address to, uint256 amount) external onlyAdmin {
-        require(tokenAddress != address(this), "Can't rescue stTD");
+    function rescueERC20(address token, address to, uint256 amount) external onlyAdmin {
+        require(token != address(this), "Can't rescue stTD");
         // If is TD, check pooled amount first.
-        if (tokenAddress == asset()) {
-            require(amount <= IERC20(tokenAddress).balanceOf(address(this)) - stakedTDAmount, "TD rescue amount too large");
+        if (token == asset()) {
+            require(amount <= IERC20(token).balanceOf(address(this)) - stakedTDAmount, "TD rescue amount too large");
         }
-        IERC20(tokenAddress).safeTransfer(to, amount);
+        IERC20(token).safeTransfer(to, amount);
     }
 
     function setNewTD(address newTD) external onlyAdmin {
+        if (block.chainid != mainChainId) {
+            revert UnsupportedChain(block.chainid);
+        }
         require(newTD != address(td) && newTD != address(0), "_td address wrong");
         td = IERC20(newTD);
         emit SetNewTD(newTD);
